@@ -126,6 +126,13 @@ type app struct {
 	gamepadMu         sync.Mutex
 	gamepad           *gamepad
 	endGamepadSession context.CancelFunc
+
+	party        *party
+	guestPort    int // 0 turns parties off
+	guestGuard   *loginGuard
+	openGuestPad func() (*gamepad, error)
+	guestMu      sync.Mutex
+	guestServer  *http.Server // runs only while a party does
 }
 
 func loadPasscode(dir string) (string, error) {
@@ -506,6 +513,10 @@ func main() {
 		openKeyboard:    openVirtualKeyboard,
 		gamepadTimeout:  gamepadTimeout,
 		openGamepad:     openVirtualGamepad,
+		party:           newParty(),
+		guestPort:       settings.GuestPort,
+		guestGuard:      &loginGuard{failures: map[string]attempt{}},
+		openGuestPad:    openVirtualGamepad,
 	}
 
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
@@ -525,6 +536,8 @@ func main() {
 	mux.HandleFunc("GET /api/gamepad", a.handleGamepad)
 	mux.HandleFunc("GET /api/gamepad/layout", a.auth(a.handleLayoutRead))
 	mux.HandleFunc("POST /api/gamepad/layout", a.auth(a.handleLayoutSave))
+	mux.HandleFunc("GET /api/party", a.auth(a.handlePartyRead))
+	mux.HandleFunc("POST /api/party", a.auth(a.handlePartyChange))
 	mux.HandleFunc("GET /api/art", a.auth(handleArt))
 	mux.HandleFunc("GET /api/outputs", a.auth(handleOutputs))
 	mux.HandleFunc("POST /api/output", a.auth(handleOutput))

@@ -12,7 +12,10 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const defaultPort = 8377
+const (
+	defaultPort      = 8377
+	defaultGuestPort = 8378
+)
 
 // config is ~/.config/pc-remote/config.toml. Every setting is optional.
 type config struct {
@@ -21,6 +24,9 @@ type config struct {
 	Access string `toml:"access"`
 	Port   int    `toml:"port"`
 	Listen string `toml:"listen"`
+	// GuestPort is where friends on the home Wi-Fi join a party; 0 turns
+	// parties off. It's open only while a party runs.
+	GuestPort int `toml:"guest_port"`
 }
 
 var themeNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -34,7 +40,7 @@ func configDir() (string, error) {
 }
 
 func loadConfig(dir string) (config, error) {
-	c := config{Theme: "default", Access: "lan", Port: defaultPort}
+	c := config{Theme: "default", Access: "lan", Port: defaultPort, GuestPort: defaultGuestPort}
 	path := filepath.Join(dir, "config.toml")
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -65,6 +71,9 @@ func loadConfig(dir string) (config, error) {
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return c, fmt.Errorf("%s: port must be 1 to 65535", path)
+	}
+	if c.GuestPort < 0 || c.GuestPort > 65535 || c.GuestPort == c.Port {
+		return c, fmt.Errorf("%s: guest_port must be 0 (off) or 1 to 65535, and not the same as port", path)
 	}
 	return c, nil
 }

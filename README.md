@@ -13,6 +13,7 @@ Control your [Omarchy](https://omarchy.org) PC from your phone. Omarchy Remote i
 - **Display:** turn the screens off, toggle the night light, and set the brightness of all monitors or of each one.
 - **Input:** hold the phone upright for a trackpad (tap to click, two-finger scroll, a scroll strip, left and right click) or turn it sideways for a full keyboard. You can also type text into the focused window and send or fetch the clipboard.
 - **Game:** turn the phone sideways for a touch controller that the PC sees as an Xbox 360 controller, so Steam and most games work without setup. You can move, resize and hide every control.
+- **Party:** friends on your Wi-Fi join as players 2 to 4 with a 4-letter code or a QR code, and get a controller and nothing else.
 - **Themes:** follows your Omarchy theme, or use your own CSS. Changes show up on the phone without a restart.
 - **One passcode** that is created on first run, with a one-minute lockout after five wrong tries.
 - **Single binary** with the web app embedded. It needs no root access: keyboard and mouse input go through `/dev/uinput`, which systemd gives to the user signed in at the computer.
@@ -64,6 +65,7 @@ name   = "Studio PC"   # title at the top of the app (default: the computer's na
 theme  = "omarchy"     # see Themes below (default: "default")
 access = "tailscale"   # "lan" or "tailscale" (default: "lan")
 port   = 8377
+guest_port = 8378      # where friends join a party; 0 turns parties off
 ```
 
 | `access` | Listens on | Use it when |
@@ -144,7 +146,19 @@ Open the **Game** tab and turn the phone sideways. The first time, the PC gets a
 
 To change the layout, tap the pencil button on the controller. Drag controls to move them, tap one to resize or hide it, and tap **Done** to save. Layouts are stored on the PC in `~/.config/pc-remote/gamepad.json`, as shares of the screen, so a layout works on any phone and survives reinstalling the Home Screen app.
 
-One phone at a time is the controller. If a second phone opens the Game tab, it takes over. iPhones can't vibrate from a web app, so there's no rumble or button feedback on iPhone; Android vibrates briefly on each press.
+Your app is player 1. If another phone signs in to the app and opens the Game tab, it takes over player 1; friends join as other players through a party (below). iPhones can't vibrate from a web app, so there's no rumble or button feedback on iPhone; Android vibrates briefly on each press.
+
+## Party: friends as players 2 to 4
+
+On the Game tab, tap **Invite players**. You get a 4-letter code (no numbers, and no I or O, which are easy to mishear), the link, **Copy**, **Share** and a full-screen **QR code**. Friends on your Wi-Fi scan the QR code, or open the link and type the code, then enter their name. Each friend gets their own Xbox controller on the PC.
+
+- **Guests only get a controller.** They join on a separate port (8378), which serves only the join page and the guest controller, accepts only home-network addresses, and is open only while a party runs. Your passcode never leaves your phone.
+- **The list** on your phone shows each player, their delay, and a **Remove** button. **New code** changes the code without kicking anyone. **End party** disconnects everyone, unplugs their controllers and closes the guest port.
+- **Reconnecting** (phone locked, Wi-Fi blip) keeps the same player; the phone remembers its place until the party ends.
+- **Guessing codes** is limited: 5 wrong tries lock a device out for a minute, and 20 wrong tries from all devices together pause joining for a minute.
+- Guests can't edit the layout; they get the default one.
+
+If you use a firewall, allow the guest port from your home network: `sudo ufw allow from 192.168.0.0/24 to any port 8378 proto tcp`. Set `guest_port = 0` in `config.toml` to turn parties off.
 
 ## Uninstall
 

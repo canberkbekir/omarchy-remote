@@ -117,9 +117,20 @@ func parsePadState(message string) (padState, bool) {
 }
 
 type gamepad struct {
-	mu    sync.Mutex
-	out   io.Writer
-	state padState
+	mu     sync.Mutex
+	out    io.Writer
+	closer io.Closer // removes the controller from the PC; nil in tests
+	state  padState
+}
+
+// close unplugs the controller. Games see it disconnect.
+func (g *gamepad) close() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closer != nil {
+		g.closer.Close()
+		g.closer = nil
+	}
 }
 
 // apply sends only what changed since the last state, then one sync.
@@ -234,7 +245,7 @@ func openVirtualGamepad() (*gamepad, error) {
 	}
 	// Give games a moment to pick up the new controller before the first press.
 	time.Sleep(500 * time.Millisecond)
-	return &gamepad{out: f}, nil
+	return &gamepad{out: f, closer: f}, nil
 }
 
 func (a *app) gamepadDevice() (*gamepad, error) {
@@ -260,8 +271,7 @@ func (a *app) startGamepadSession(cancel context.CancelFunc) {
 	a.endGamepadSession = cancel
 }
 
-// handleGamepad takes "g ..." state messages and answers "t ..." with the same
-// text, so the phone can show the delay. Anything else keeps the session alive.
+// handleGamepad is the admin's controller, always player 1.
 func (a *app) handleGamepad(w http.ResponseWriter, r *http.Request) {
 	conn := a.acceptSocket(w, r)
 	if conn == nil {
@@ -278,30 +288,42 @@ func (a *app) handleGamepad(w http.ResponseWriter, r *http.Request) {
 	session, end := context.WithCancel(context.Background())
 	defer end()
 	a.startGamepadSession(end)
+	playGamepad(session, conn, device, a.gamepadTimeout, nil)
+}
+
+// playGamepad runs one phone's controller until the phone leaves, goes quiet
+// or the session is ended. It takes "g ..." state messages, answers "t ..."
+// with the same text so the phone can measure the delay, and passes on the
+// delay the phone reports with "l <ms>". Anything else keeps the session alive.
+func playGamepad(session context.Context, conn *websocket.Conn, device *gamepad, timeout time.Duration, onDelay func(int)) {
 	device.reset()
 	defer device.reset()
-
 	if err := conn.Write(session, websocket.MessageText, []byte("ok")); err != nil {
 		return
 	}
 	for {
-		readContext, cancelRead := context.WithTimeout(session, a.gamepadTimeout)
+		readContext, cancelRead := context.WithTimeout(session, timeout)
 		_, message, err := conn.Read(readContext)
 		cancelRead()
 		if err != nil {
 			return
 		}
 		text := string(message)
-		if strings.HasPrefix(text, "t ") {
+		switch {
+		case strings.HasPrefix(text, "t "):
 			if err := conn.Write(session, websocket.MessageText, message); err != nil {
 				return
 			}
-			continue
-		}
-		if state, ok := parsePadState(text); ok {
-			if err := device.apply(state); err != nil {
-				log.Printf("sending gamepad state: %v", err)
-				return
+		case strings.HasPrefix(text, "l "):
+			if ms, err := strconv.Atoi(text[2:]); err == nil && onDelay != nil {
+				onDelay(min(max(ms, 0), 9999))
+			}
+		default:
+			if state, ok := parsePadState(text); ok {
+				if err := device.apply(state); err != nil {
+					log.Printf("sending gamepad state: %v", err)
+					return
+				}
 			}
 		}
 	}
