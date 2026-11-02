@@ -310,10 +310,25 @@ func (a *app) handleKeyboard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// clientAddress names the device for the passcode lockout. Behind a local proxy
+// such as `tailscale serve`, every request comes from loopback, so the device is
+// read from the X-Forwarded-For entry the proxy appended. Only loopback is trusted:
+// a device on the network cannot make its connection come from this PC.
 func clientAddress(r *http.Request) string {
 	address, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
+	}
+	if ip := net.ParseIP(address); ip == nil || !ip.IsLoopback() {
+		return address
+	}
+	forwarded := r.Header.Values("X-Forwarded-For")
+	if len(forwarded) == 0 {
+		return address
+	}
+	entries := strings.Split(forwarded[len(forwarded)-1], ",")
+	if ip := net.ParseIP(strings.TrimSpace(entries[len(entries)-1])); ip != nil {
+		return ip.String()
 	}
 	return address
 }
