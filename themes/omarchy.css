@@ -1,0 +1,14 @@
+/* Follows the current Omarchy theme. The server reads Omarchy's colors.toml and
+   provides every color in it as --omarchy-<name> (e.g. --omarchy-bright-blue),
+   so your own themes can use them too. Without Omarchy, the default look stays. */
+:root {
+  color-scheme: var(--omarchy-mode, dark);
+  --ground: var(--omarchy-darker-background, #0E0F0C);
+  --panel: var(--omarchy-lighter-background, #1A1B17);
+  --line: var(--omarchy-selection, #2E302A);
+  --ink: var(--omarchy-bright-foreground, #ECEBE3);
+  --soft: var(--omarchy-foreground, #B4B5AC);
+  --dim: var(--omarchy-dark-foreground, #8A8C82);
+  --accent: var(--omarchy-accent, #C8F24A);
+  --risk: var(--omarchy-orange, #FF9A66);
+}

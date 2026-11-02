@@ -1,0 +1,86 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+
+	"github.com/BurntSushi/toml"
+)
+
+const defaultPort = 8377
+
+// config is ~/.config/pc-remote/config.toml. Every setting is optional.
+type config struct {
+	Name   string `toml:"name"`
+	Theme  string `toml:"theme"`
+	Access string `toml:"access"`
+	Port   int    `toml:"port"`
+	Listen string `toml:"listen"`
+}
+
+var themeNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+func configDir() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "pc-remote"), nil
+}
+
+func loadConfig(dir string) (config, error) {
+	c := config{Theme: "default", Access: "lan", Port: defaultPort}
+	path := filepath.Join(dir, "config.toml")
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return c, err
+	}
+	if err == nil {
+		meta, err := toml.Decode(string(data), &c)
+		if err != nil {
+			return c, fmt.Errorf("%s: %w", path, err)
+		}
+		// A typo would otherwise be ignored without a word.
+		if keys := meta.Undecoded(); len(keys) > 0 {
+			return c, fmt.Errorf("%s: unknown setting %q", path, keys[0].String())
+		}
+	}
+
+	if c.Name == "" {
+		c.Name, _ = os.Hostname()
+	}
+	if c.Name == "" {
+		c.Name = "PC Remote"
+	}
+	if !themeNamePattern.MatchString(c.Theme) {
+		return c, fmt.Errorf("%s: theme %q may only use letters, digits, - and _", path, c.Theme)
+	}
+	if c.Access != "lan" && c.Access != "tailscale" {
+		return c, fmt.Errorf("%s: access must be \"lan\" or \"tailscale\", not %q", path, c.Access)
+	}
+	if c.Port < 1 || c.Port > 65535 {
+		return c, fmt.Errorf("%s: port must be 1 to 65535", path)
+	}
+	return c, nil
+}
+
+// listenAddr picks the address in order: PC_REMOTE_ADDR, listen, then the access preset.
+// With "tailscale", only `tailscale serve` on this PC can reach the server.
+func (c config) listenAddr() string {
+	if addr := os.Getenv("PC_REMOTE_ADDR"); addr != "" {
+		return addr
+	}
+	if c.Listen != "" {
+		return c.Listen
+	}
+	host := "0.0.0.0"
+	if c.Access == "tailscale" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(c.Port))
+}

@@ -5,8 +5,7 @@ After=pipewire.service wireplumber.service
 [Service]
 ExecStart=%h/.local/bin/pc-remote-web
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-# Uncomment to listen only on one address, such as your Tailscale IP.
-#Environment=PC_REMOTE_ADDR=100.x.y.z:8377
+# Settings live in ~/.config/pc-remote/config.toml; see the README.
 Restart=on-failure
 RestartSec=2
 

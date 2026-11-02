@@ -1,0 +1,14 @@
+/* The default look. Copy this file to ~/.config/pc-remote/themes/<name>.css
+   to start your own theme, then set theme = "<name>" in config.toml. */
+:root {
+  --ground: #0E0F0C;   /* page background */
+  --panel: #1A1B17;    /* buttons and cards */
+  --line: #2E302A;     /* borders */
+  --ink: #ECEBE3;      /* main text */
+  --soft: #B4B5AC;     /* secondary text */
+  --dim: #8A8C82;      /* hints and unlit ticks */
+  --accent: #C8F24A;   /* sliders and the status dot */
+  --risk: #FF9A66;     /* Shut Down and other warnings */
+  --font: -apple-system, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Geist Mono", monospace;
+}

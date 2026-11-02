@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	defaultAddr      = "0.0.0.0:8377"
 	sink             = "@DEFAULT_AUDIO_SINK@"
 	passcodeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 	passcodeLength   = 10
@@ -45,9 +44,6 @@ var powerCommands = map[string][]string{
 	"shutdown": {"pc-remote", "omarchy-system-shutdown"},
 }
 
-// hostname titles the app, so each install shows its own computer's name.
-var hostname, _ = os.Hostname()
-
 var mediaCommands = map[string][]string{
 	"previous": {"playerctl", "previous"},
 	"toggle":   {"playerctl", "play-pause"},
@@ -55,7 +51,8 @@ var mediaCommands = map[string][]string{
 }
 
 type status struct {
-	Name       string `json:"name"`
+	Name       string `json:"name,omitempty"`
+	Theme      string `json:"theme,omitempty"`
 	Volume     int    `json:"volume"`
 	Muted      bool   `json:"muted"`
 	Media      bool   `json:"media"`
@@ -111,6 +108,8 @@ func (g *loginGuard) clear(address string) {
 }
 
 type app struct {
+	name     string
+	themes   *themes
 	passcode []byte
 	guard    *loginGuard
 	ddc      sync.Mutex // Monitors handle one DDC/CI request at a time.
@@ -122,12 +121,8 @@ type app struct {
 	endKeyboardSession context.CancelFunc
 }
 
-func loadPasscode() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(home, ".config", "pc-remote", "passcode")
+func loadPasscode(dir string) (string, error) {
+	path := filepath.Join(dir, "passcode")
 	data, err := os.ReadFile(path)
 	if err == nil {
 		passcode := strings.TrimSpace(string(data))
@@ -227,7 +222,6 @@ func readStatus() (status, error) {
 		return status{}, err
 	}
 	s := status{
-		Name:   hostname,
 		Volume: int(math.Round(level * 100)),
 		Muted:  strings.Contains(output, "[MUTED]"),
 	}
@@ -298,8 +292,16 @@ func (a *app) auth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeStatus(w)
+// The status poll also carries the title and the theme version, so both update live.
+func (a *app) handleStatus(w http.ResponseWriter, r *http.Request) {
+	s, err := readStatus()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not read status.")
+		return
+	}
+	s.Name = a.name
+	s.Theme = a.themes.version()
+	writeJSON(w, http.StatusOK, s)
 }
 
 func handleVolume(w http.ResponseWriter, r *http.Request) {
@@ -467,7 +469,19 @@ func handlePower(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	passcode, err := loadPasscode()
+	dir, err := configDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	settings, err := loadConfig(dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	look, err := newThemes(dir, settings.Theme)
+	if err != nil {
+		log.Fatal(err)
+	}
+	passcode, err := loadPasscode(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -476,6 +490,8 @@ func main() {
 		log.Fatal(err)
 	}
 	a := &app{
+		name:            settings.Name,
+		themes:          look,
 		passcode:        []byte(passcode),
 		guard:           &loginGuard{failures: map[string]attempt{}},
 		keyboardTimeout: keyboardTimeout,
@@ -487,7 +503,7 @@ func main() {
 	}
 	static := http.FileServerFS(site)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/status", a.auth(handleStatus))
+	mux.HandleFunc("GET /api/status", a.auth(a.handleStatus))
 	mux.HandleFunc("POST /api/volume", a.auth(handleVolume))
 	mux.HandleFunc("POST /api/mute", a.auth(handleMute))
 	mux.HandleFunc("POST /api/media", a.auth(handleMedia))
@@ -503,16 +519,14 @@ func main() {
 	mux.HandleFunc("POST /api/type", a.auth(handleType))
 	mux.HandleFunc("GET /api/clipboard", a.auth(handleClipboardRead))
 	mux.HandleFunc("POST /api/clipboard", a.auth(handleClipboardWrite))
+	mux.HandleFunc("GET /theme.css", look.handleTheme)
+	mux.HandleFunc("GET /user.css", look.handleUser)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		static.ServeHTTP(w, r)
 	})
 
-	// PC_REMOTE_ADDR lets an install listen on one interface, such as a Tailscale address.
-	addr := os.Getenv("PC_REMOTE_ADDR")
-	if addr == "" {
-		addr = defaultAddr
-	}
+	addr := settings.listenAddr()
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           mux,

@@ -21,5 +21,5 @@ for _ in 1 2 3 4 5; do
 done
 
 echo
-echo "PC Remote is running on port 8377."
+echo "PC Remote is running. Settings: ~/.config/pc-remote/config.toml (see the README)."
 echo "Passcode: $(cat "$HOME/.config/pc-remote/passcode" 2>/dev/null || echo 'see ~/.config/pc-remote/passcode')"
