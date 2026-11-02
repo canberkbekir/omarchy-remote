@@ -130,7 +130,7 @@ func TestGamepadLayoutSaveAndRead(t *testing.T) {
 		t.Errorf("empty layout = %s", got)
 	}
 
-	body := `{"version":1,"controls":{"a":{"x":80,"y":60,"size":120,"hidden":false},"l3":{"x":10,"y":10,"size":100,"hidden":true}}}`
+	body := `{"version":1,"controls":{"a":{"x":80,"y":60,"size":120,"hidden":false},"l3":{"x":10,"y":10,"size":100,"hidden":true},"rs":{"x":70,"y":75,"size":100,"hidden":false,"mode":"stick"}}}`
 	w := httptest.NewRecorder()
 	a.handleLayoutSave(w, httptest.NewRequest("POST", "/", strings.NewReader(body)))
 	if w.Code != http.StatusOK {
@@ -152,6 +152,8 @@ func TestGamepadLayoutRejects(t *testing.T) {
 		`{"version":1,"controls":{"zz":{"x":1,"y":1,"size":100}}}`,
 		`{"version":1,"controls":{"a":{"x":101,"y":1,"size":100}}}`,
 		`{"version":1,"controls":{"a":{"x":1,"y":1,"size":20}}}`,
+		`{"version":1,"controls":{"a":{"x":1,"y":1,"size":100,"mode":"swipe"}}}`,
+		`{"version":1,"controls":{"rs":{"x":1,"y":1,"size":100,"mode":"fast"}}}`,
 		`not json`,
 		`{"version":1,"controls":{"a":{"x":1,"y":1,"size":100,"pad":"` + strings.Repeat("x", 9000) + `"}}}`,
 	} {

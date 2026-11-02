@@ -33,6 +33,7 @@ function setupGamepad(options) {
     <div class="gp-selected" id="gp-selected" hidden>
       <span id="gp-name"></span>
       <input type="range" id="gp-size" min="60" max="160" step="5" aria-label="Size">
+      <button type="button" id="gp-mode" hidden>Aim</button>
       <button type="button" id="gp-hide">Hide</button>
     </div>
     <button type="button" class="gp-done" id="gp-done">Done</button>
@@ -50,6 +51,19 @@ function setupGamepad(options) {
   const PAD_RESEND_MS = 250;
   const PAD_DELAY_MS = 2000;
   const STICK_MAX = 32767;
+  // Swipe aim turns the right stick into a touchpad: the stick leans as far as
+  // the finger is moving fast, averaged over a short window, and centers once
+  // it stops. The floor gets small moves past the game's own dead zone.
+  const AIM_WINDOW_MS = 50;
+  const AIM_MIN_SPEED = 0.04;
+  const AIM_FULL_SPEED = 1.4;
+  const AIM_FLOOR = 0.15;
+  const AIM_CURVE = 0.7;
+  // A quick tap and then a touch that stays down on a stick clicks it (L3, R3).
+  const TAP_MS = 200;
+  const TAP_MOVE_PX = 12;
+  const DOUBLE_TAP_MS = 350;
+  const DOUBLE_TAP_PX = 60;
   const PAD_BITS = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, back: 6, start: 7, home: 8, l3: 9, r3: 10 };
   const DPAD_BITS = { up: 11, down: 12, left: 13, right: 14 };
   const PAD_ICONS = {
@@ -69,7 +83,7 @@ function setupGamepad(options) {
     { id: 'start', name: 'Start', spoken: 'Start', icon: 'start', w: 44, h: 44, x: 470, y: 126, look: 'round' },
     { id: 'l3', name: 'L3', spoken: 'Left stick press', w: 48, h: 32, x: 392, y: 176, look: 'small' },
     { id: 'r3', name: 'R3', spoken: 'Right stick press', w: 48, h: 32, x: 452, y: 176, look: 'small' },
-    { id: 'rs', name: 'Right stick', spoken: 'Right stick', kind: 'stick', w: 156, h: 160, x: 542, y: 294, base: 88, knob: 44, hint: 'Right stick' },
+    { id: 'rs', name: 'Right stick', spoken: 'Right stick', kind: 'stick', w: 156, h: 160, x: 542, y: 294, base: 88, knob: 44, hint: 'Right stick', aimHint: 'Swipe to aim' },
     { id: 'y', name: 'Y', spoken: 'Y', w: 60, h: 60, x: 710, y: 92, look: 'face' },
     { id: 'x', name: 'X', spoken: 'X', w: 60, h: 60, x: 648, y: 154, look: 'face' },
     { id: 'b', name: 'B', spoken: 'B', w: 60, h: 60, x: 772, y: 154, look: 'face' },
@@ -102,6 +116,8 @@ function setupGamepad(options) {
   let padFlashTimer = null;
   const padPointers = new Map();
   const padSticks = {};
+  const padStickTaps = {};
+  let padAimFrame = 0;
   let padDpad = { pointer: null, dirs: {} };
   const padElements = new Map();
 
@@ -146,6 +162,8 @@ function setupGamepad(options) {
     let bits = 0;
     for (const [id, bit] of Object.entries(PAD_BITS)) if (held.has(id)) bits |= 1 << bit;
     for (const [dir, bit] of Object.entries(DPAD_BITS)) if (padDpad.dirs[dir]) bits |= 1 << bit;
+    if (padSticks.ls?.click) bits |= 1 << PAD_BITS.l3;
+    if (padSticks.rs?.click) bits |= 1 << PAD_BITS.r3;
     const axis = (id, key) => {
       const stick = padSticks[id];
       return stick ? Math.round((stick[key] / (PAD_BY_ID[id].base / 2)) * STICK_MAX) : 0;
@@ -161,6 +179,43 @@ function setupGamepad(options) {
   // Moves are sent once per frame; presses and releases go out at once.
   function schedulePad() {
     if (!padFrame) padFrame = requestAnimationFrame(() => { padFrame = 0; sendPad(); });
+  }
+
+  // The right stick aims by swiping unless the layout says "stick".
+  function aims(control) {
+    return control.id === 'rs' && padLayout.rs.mode !== 'stick';
+  }
+
+  function aimStick(control, stick, now) {
+    const since = now - AIM_WINDOW_MS;
+    while (stick.trail.length > 1 && stick.trail[1].t <= since) stick.trail.shift();
+    const from = stick.trail[0];
+    const to = stick.trail[stick.trail.length - 1];
+    const vx = (to.x - from.x) / AIM_WINDOW_MS;
+    const vy = (to.y - from.y) / AIM_WINDOW_MS;
+    const speed = Math.hypot(vx, vy);
+    if (speed < AIM_MIN_SPEED) {
+      stick.dx = 0;
+      stick.dy = 0;
+      return;
+    }
+    const lean = (AIM_FLOOR + (1 - AIM_FLOOR) * Math.min(speed / AIM_FULL_SPEED, 1) ** AIM_CURVE) * (control.base / 2);
+    stick.dx = (vx / speed) * lean;
+    stick.dy = (vy / speed) * lean;
+  }
+
+  // Runs every frame while the finger is on a swipe-aim stick, so the stick
+  // centers when the finger stops even though no more moves arrive.
+  function aimTick() {
+    padAimFrame = 0;
+    const control = PAD_BY_ID.rs;
+    const stick = padSticks.rs;
+    if (!stick?.trail) return;
+    const before = `${stick.dx} ${stick.dy}`;
+    aimStick(control, stick, performance.now());
+    if (`${stick.dx} ${stick.dy}` !== before) sendPad();
+    drawControl(control);
+    padAimFrame = requestAnimationFrame(aimTick);
   }
 
   // Eight directions from where the finger is on the pad; the middle is neutral.
@@ -234,7 +289,13 @@ function setupGamepad(options) {
     padPointers.set(event.pointerId, control.id);
     if (control.kind === 'stick') {
       const p = toControl(control, event);
-      padSticks[control.id] = { pointer: event.pointerId, ox: p.x, oy: p.y, dx: 0, dy: 0 };
+      const at = { t: event.timeStamp, ...toPad(event) };
+      const tap = padStickTaps[control.id];
+      const click = !!tap && at.t - tap.t < DOUBLE_TAP_MS && Math.hypot(at.x - tap.x, at.y - tap.y) < DOUBLE_TAP_PX;
+      delete padStickTaps[control.id];
+      padSticks[control.id] = { pointer: event.pointerId, ox: p.x, oy: p.y, dx: 0, dy: 0, click, start: at, far: 0, trail: aims(control) ? [at] : null };
+      if (click) navigator.vibrate?.(25);
+      if (aims(control) && !padAimFrame) padAimFrame = requestAnimationFrame(aimTick);
     } else if (control.kind === 'dpad') {
       padDpad = { pointer: event.pointerId, dirs: dpadDirs(control, event) };
     }
@@ -251,14 +312,26 @@ function setupGamepad(options) {
     if (control.kind === 'stick') {
       const stick = padSticks[control.id];
       if (!stick || stick.pointer !== event.pointerId) return;
+      const at = { t: event.timeStamp, ...toPad(event) };
+      stick.far = Math.max(stick.far, Math.hypot(at.x - stick.start.x, at.y - stick.start.y));
       const p = toControl(control, event);
+      if (stick.trail) {
+        // Swipe aim: the base sits under the finger and the frame loop sends.
+        stick.trail.push(at);
+        stick.ox = p.x;
+        stick.oy = p.y;
+        return;
+      }
       let dx = p.x - stick.ox;
       let dy = p.y - stick.oy;
       const travel = control.base / 2;
       const distance = Math.hypot(dx, dy);
+      // Past the edge the base follows the thumb, so turning back acts at once.
       if (distance > travel) {
         dx = (dx * travel) / distance;
         dy = (dy * travel) / distance;
+        stick.ox = p.x - dx;
+        stick.oy = p.y - dy;
       }
       stick.dx = dx;
       stick.dy = dy;
@@ -283,7 +356,11 @@ function setupGamepad(options) {
     }
     if (!padPointers.has(event.pointerId)) return;
     padPointers.delete(event.pointerId);
-    if (padSticks[control.id]?.pointer === event.pointerId) delete padSticks[control.id];
+    const stick = padSticks[control.id];
+    if (stick?.pointer === event.pointerId) {
+      if (!stick.click && event.timeStamp - stick.start.t < TAP_MS && stick.far < TAP_MOVE_PX) padStickTaps[control.id] = stick.start;
+      delete padSticks[control.id];
+    }
     if (padDpad.pointer === event.pointerId) padDpad = { pointer: null, dirs: {} };
     sendPad();
     drawControl(control);
@@ -304,7 +381,8 @@ function setupGamepad(options) {
     if (control.kind === 'stick') {
       const stick = padEditing ? null : padSticks[control.id];
       el.classList.toggle('active', !!stick);
-      el.querySelector('.gp-zone-hint').textContent = padEditing ? control.name : control.hint;
+      el.classList.toggle('clicked', !!stick?.click);
+      el.querySelector('.gp-zone-hint').textContent = padEditing ? control.name : (aims(control) ? control.aimHint : control.hint);
       if (stick) {
         const base = el.querySelector('.gp-base').style;
         const knob = el.querySelector('.gp-knob').style;
@@ -340,7 +418,9 @@ function setupGamepad(options) {
       $('gp-size').value = padLayout[padSelected].size;
       $('gp-size').setAttribute('aria-label', `Size of ${chosen.name}`);
       $('gp-hide').textContent = padLayout[padSelected].hidden ? 'Show' : 'Hide';
+      $('gp-mode').textContent = aims(PAD_BY_ID.rs) ? 'Aim: swipe' : 'Aim: stick';
     }
+    $('gp-mode').hidden = padSelected !== 'rs';
     drawPadStatus();
   }
 
@@ -555,6 +635,7 @@ function setupGamepad(options) {
   });
   $('gp-size').addEventListener('input', (event) => updateSelected({ size: Number(event.target.value) }));
   $('gp-hide').addEventListener('click', () => updateSelected({ hidden: !padLayout[padSelected].hidden }));
+  $('gp-mode').addEventListener('click', () => updateSelected({ mode: aims(PAD_BY_ID.rs) ? 'stick' : 'swipe' }));
   $('gamepad').addEventListener('pointerdown', (event) => {
     if (padEditing && (event.target === $('gamepad') || event.target === $('gp-controls'))) {
       padSelected = null;

@@ -168,6 +168,8 @@ nav { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 
 .gp-c.rt { border-radius: 22px 14px 14px 14px; }
 .gp-c .i { width: 20px; height: 20px; }
 .gp-c.zone { background: transparent; border-style: dashed; border-radius: 28px; }
+.gp-c.zone.active { overflow: visible; }
+.gp-c.zone.clicked .gp-knob { box-shadow: 0 0 0 6px var(--ground), 0 0 0 9px var(--accent); }
 .gp-c.dpad { background: transparent; border-color: transparent; overflow: visible; }
 .gp-c.selected { z-index: 5; outline: 2px dashed var(--accent); outline-offset: 3px; }
 .gp-c.faded { opacity: .3; border-style: dashed; }
