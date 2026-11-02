@@ -197,6 +197,7 @@
   <div class="key-rows" id="key-rows"></div>
 </div>
 
+<div class="gp-sizer" id="gp-sizer" aria-hidden="true"></div>
 <div class="gamepad" id="gamepad" hidden>
   <div class="gp-controls" id="gp-controls"></div>
   <div class="gp-bar" id="gp-bar">
@@ -1134,17 +1135,30 @@ function padScale(id) {
 // Turned is drawn sideways on an upright screen (rotation lock), so screen
 // coordinates are rotated back into the controller's own.
 function toPad(event) {
-  if (padTurned) return { x: event.clientY, y: innerWidth - event.clientX };
+  if (padTurned) return { x: event.clientY, y: padSize.h - event.clientX };
   return { x: event.clientX, y: event.clientY };
+}
+
+// Where a control is drawn, kept fully on screen even if its layout was saved
+// on a bigger phone.
+function padCenter(control) {
+  const spot = padLayout[control.id];
+  const k = padScale(control.id);
+  const halfW = Math.min((control.w * k) / 2, padSize.w / 2);
+  const halfH = Math.min((control.h * k) / 2, padSize.h / 2);
+  return {
+    x: Math.min(Math.max((spot.x / 100) * padSize.w, halfW), padSize.w - halfW),
+    y: Math.min(Math.max((spot.y / 100) * padSize.h, halfH), padSize.h - halfH),
+  };
 }
 
 function toControl(control, event) {
   const p = toPad(event);
-  const spot = padLayout[control.id];
+  const center = padCenter(control);
   const k = padScale(control.id);
   return {
-    x: (p.x - (spot.x / 100) * padSize.w) / k + control.w / 2,
-    y: (p.y - (spot.y / 100) * padSize.h) / k + control.h / 2,
+    x: (p.x - center.x) / k + control.w / 2,
+    y: (p.y - center.y) / k + control.h / 2,
   };
 }
 
@@ -1290,8 +1304,9 @@ function drawControl(control) {
   const el = padElements.get(control.id);
   if (!el) return;
   const spot = padLayout[control.id];
-  el.style.left = `${(spot.x / 100) * padSize.w}px`;
-  el.style.top = `${(spot.y / 100) * padSize.h}px`;
+  const { x, y } = padCenter(control);
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
   el.style.setProperty('--k', padScale(control.id));
   el.hidden = spot.hidden && !padEditing;
   el.classList.toggle('faded', spot.hidden && padEditing);
@@ -1358,8 +1373,8 @@ function flashPad(text) {
 // ---- Editing the layout ----
 
 function editDown(control, event) {
-  const spot = padLayout[control.id];
-  padDrag = { id: control.id, pointer: event.pointerId, start: toPad(event), x: (spot.x / 100) * padSize.w, y: (spot.y / 100) * padSize.h, moved: false };
+  const center = padCenter(control);
+  padDrag = { id: control.id, pointer: event.pointerId, start: toPad(event), x: center.x, y: center.y, moved: false };
   if (padSelected !== control.id) buzz();
   padSelected = control.id;
   drawPad();
@@ -1481,13 +1496,19 @@ function connectPad() {
 
 // ---- Opening and closing ----
 
+// The screen area comes from #gp-sizer, a fixed full-screen box watched by a
+// ResizeObserver. Window sizes read during a rotation can be stale on iOS; the
+// observer reports again once the new size has settled.
 function measurePad() {
   const pad = $('gamepad');
-  padSize = padTurned ? { w: innerHeight, h: innerWidth } : { w: innerWidth, h: innerHeight };
+  const screenBox = $('gp-sizer').getBoundingClientRect();
+  const width = Math.round(screenBox.width);
+  const height = Math.round(screenBox.height);
+  padSize = padTurned ? { w: height, h: width } : { w: width, h: height };
   pad.classList.toggle('turned', padTurned);
   pad.style.width = padTurned ? `${padSize.w}px` : '';
   pad.style.height = padTurned ? `${padSize.h}px` : '';
-  pad.style.left = padTurned ? `${innerWidth}px` : '';
+  pad.style.left = padTurned ? `${width}px` : '';
 }
 
 // On the Game tab, turning the phone sideways opens the controller. The Open
@@ -1547,11 +1568,11 @@ landscape.addEventListener('change', () => {
   padDismissed = false;
   syncGamepad();
 });
-addEventListener('resize', () => {
+new ResizeObserver(() => {
   if (!padOpen) return;
   measurePad();
   drawPad();
-});
+}).observe($('gp-sizer'));
 
 async function action(path, body, message) {
   try {
