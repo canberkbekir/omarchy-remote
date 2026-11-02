@@ -202,7 +202,7 @@ On the Game tab, tap **Invite players**. You get a 4-letter code (no numbers, an
 - **Guessing codes** is limited: 5 wrong tries lock a device out for a minute, and 20 wrong tries from all devices together pause joining for a minute.
 - Guests can't edit the layout. They get the default one.
 
-If you use a firewall, allow the guest port from your home network: `sudo ufw allow from 192.168.0.0/24 to any port 8378 proto tcp`. Set `guest_port = 0` in `config.toml` to turn parties off.
+Friends' phones need the guest port to get through your [firewall](#firewall); setup offers to open it. Set `guest_port = 0` in `config.toml` to turn parties off.
 
 ## Security
 
@@ -219,6 +219,24 @@ This app can type on your keyboard and shut down your computer, so treat access 
 
 - With `access = "lan"`, the app answers only devices with home-network addresses (and Tailscale addresses), even though it listens on every network interface.
 - Starting a party opens the guest port (8378) to your home network until the party ends, even with `access = "tailscale"`. It serves only the join page and the guest controller. Set `guest_port = 0` to turn parties off.
+
+### Firewall
+
+Omarchy turns on the `ufw` firewall, which blocks incoming connections unless a rule allows them. Setup checks the rules, and if a port it needs is blocked it offers to allow it, **from your home network only**:
+
+| Port | Needed for |
+| --- | --- |
+| `8377` | the app, with `access = "lan"` or `"both"`. Tailscale doesn't need it |
+| `8378` | parties, when friends join |
+
+To do it yourself (for example after `pc-remote setup --yes`), allow each port from your network's range:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 8377 proto tcp
+sudo ufw allow from 192.168.1.0/24 to any port 8378 proto tcp
+```
+
+Use your own range: `ip -4 addr` shows it, for example `192.168.1.42/24` means `192.168.1.0/24`. With another firewall (firewalld, nftables), open the same ports to the same range. `pc-remote doctor` tells you if ufw still blocks a port. Never forward these ports on your router.
 
 ## Configuration
 
@@ -319,6 +337,14 @@ New themes are welcome as pull requests: add `themes/<name>.css` with a screensh
 systemctl --user disable --now pc-remote-web
 rm ~/.config/systemd/user/pc-remote-web.service ~/.local/bin/pc-remote-web ~/.local/bin/pc-remote
 rm -r ~/.config/pc-remote   # your passcode, config, themes and gamepad layout
+```
+
+If setup opened the firewall or set up Tailscale for you, undo that too:
+
+```bash
+sudo ufw status numbered      # find the 8377 and 8378 rules, then:
+sudo ufw delete <number>      # once per rule, highest number first
+sudo tailscale serve --https=443 off
 ```
 
 ### The `pc-remote` helper
