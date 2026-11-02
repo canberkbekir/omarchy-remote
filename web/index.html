@@ -407,7 +407,8 @@ function sheetOpen() {
 }
 
 // Swaps in fresh stylesheets when the theme or user.css changes on the PC.
-// The new link loads before the old one goes, so the page never shows unstyled.
+// The new link loads before the old ones go, so the page never shows unstyled,
+// and the newest link always comes last, so a slower older one can't win.
 let themeVersion = '';
 function applyTheme(version) {
   if (!version || version === themeVersion) return;
@@ -415,12 +416,17 @@ function applyTheme(version) {
   themeVersion = version;
   if (first) return;
   for (const id of ['theme-css', 'user-css']) {
-    const old = $(id);
-    const link = old.cloneNode();
-    link.href = `${old.href.split('?')[0]}?v=${version}`;
-    link.addEventListener('load', () => { old.remove(); syncThemeColor(); }, { once: true });
+    const links = document.querySelectorAll(`#${id}`);
+    const last = links[links.length - 1];
+    const link = last.cloneNode();
+    link.href = `${last.href.split('?')[0]}?v=${version}`;
+    link.addEventListener('load', () => {
+      if (!link.isConnected) return;
+      document.querySelectorAll(`#${id}`).forEach((other) => { if (other !== link) other.remove(); });
+      syncThemeColor();
+    }, { once: true });
     link.addEventListener('error', () => link.remove(), { once: true });
-    old.after(link);
+    last.after(link);
   }
 }
 

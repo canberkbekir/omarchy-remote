@@ -20,7 +20,8 @@ Control your [Omarchy](https://omarchy.org) PC from your phone. Omarchy Remote i
 
 - Omarchy (Hyprland, PipeWire)
 - Go 1.27 or newer to build it (`mise use -g go@latest` works)
-- `playerctl` (media controls), `wtype` and `wl-clipboard` (typing and clipboard). Omarchy includes these.
+- `playerctl` for the media controls. Omarchy doesn't include it: `sudo pacman -S playerctl`
+- An iPhone on iOS 16.2 or newer, or a recent Android browser
 
 ## Install
 
@@ -130,6 +131,14 @@ These IDs and classes won't be renamed without a note in the release, so `user.c
 | `.key`, `.primary`, `.sheet` | buttons, main actions and pop-up sheets |
 
 Anything else in the page may change between versions.
+
+## Uninstall
+
+```bash
+systemctl --user disable --now pc-remote-web
+rm ~/.config/systemd/user/pc-remote-web.service ~/.local/bin/pc-remote-web ~/.local/bin/pc-remote
+rm -r ~/.config/pc-remote   # your passcode, config and themes
+```
 
 ## The `pc-remote` helper
 
