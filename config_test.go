@@ -52,10 +52,10 @@ func TestLoadConfigListen(t *testing.T) {
 func TestLoadConfigRejects(t *testing.T) {
 	tests := map[string]string{
 		"name = \"x\"\ntheem = \"omarchy\"": "unknown setting",
-		"access = \"internet\"":            "access must be",
-		"theme = \"../secrets\"":           "theme",
-		"port = 70000":                     "port must be",
-		"name = ":                          "config.toml",
+		"access = \"internet\"":             "access must be",
+		"theme = \"../secrets\"":            "theme",
+		"port = 70000":                      "port must be",
+		"name = ":                           "config.toml",
 	}
 	for text, want := range tests {
 		_, err := loadConfig(writeConfig(t, text))
