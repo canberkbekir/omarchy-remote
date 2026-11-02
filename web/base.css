@@ -91,7 +91,7 @@ h2 { font-family: var(--mono); font-size: 13px; font-weight: 400; color: var(--s
 .k.down { background: var(--accent); border-color: var(--accent); color: var(--ground); }
 .k.latched { border-color: var(--accent); color: var(--accent); }
 
-nav { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 -20px; padding: 8px 20px 0; border-top: 1px solid var(--line); }
+nav { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 -20px; padding: 8px 20px 0; border-top: 1px solid var(--line); }
 .tab { height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: transparent; border: 0; border-radius: 12px; color: var(--soft); font-size: 11px; font-weight: 500; }
 .tab[aria-current="page"] { background: var(--panel); color: var(--ink); }
 
@@ -137,3 +137,68 @@ nav { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 
 .go { background: var(--risk); border: 1px solid var(--risk); color: var(--ground); font-weight: 600; }
 .go.accent { background: var(--accent); border-color: var(--accent); }
 .choice-wide { height: 48px; margin-bottom: 8px; border-radius: 14px; font-size: 15px; font-weight: 500; }
+
+/* Game tab */
+.game-card { flex-grow: 1; min-height: 0; padding: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--pad); border: 1px solid var(--line); border-radius: 24px; text-align: center; }
+.game-art { position: relative; width: 120px; height: 120px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 50%; color: var(--dim); }
+.game-art > .i { width: 60px; height: 60px; stroke-width: 1.25; }
+.game-turn { position: absolute; right: -6px; bottom: 6px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: 50%; color: var(--accent); }
+.game-turn .i { width: 20px; height: 20px; }
+.game-text { display: flex; flex-direction: column; gap: 8px; }
+.game-card h2 { font-family: var(--font); font-size: 22px; font-weight: 600; color: var(--ink); }
+.game-text p { font-size: 15px; line-height: 1.45; color: var(--soft); }
+.game-card .key { width: 100%; height: 52px; font-size: 15px; font-weight: 500; }
+.game-note { margin-top: -8px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.game-stats { flex-shrink: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stat { height: 72px; padding: 14px 16px; display: flex; flex-direction: column; justify-content: space-between; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; font-family: var(--mono); font-size: 12px; color: var(--soft); }
+.stat-value { font-family: var(--font); font-size: 17px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* Gamepad: controls are placed by script, centered on their spot and scaled by --k. */
+.gamepad { position: fixed; inset: 0; z-index: 3; overflow: hidden; background: var(--ground); touch-action: none; -webkit-touch-callout: none; }
+.gamepad.turned { inset: auto; top: 0; transform-origin: top left; transform: rotate(90deg); }
+.gamepad.editing { background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 16px 16px; }
+.gp-controls { position: absolute; inset: 0; }
+.gp-c, .gp-c:active:not(:disabled) { transform: translate(-50%, -50%) scale(var(--k, 1)); }
+.gp-c { position: absolute; padding: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; font-family: var(--mono); font-size: 14px; font-weight: 500; touch-action: none; }
+.gp-c.on { background: var(--accent); border-color: var(--accent); color: var(--ground); }
+.gp-c.round { border-radius: 50%; }
+.gp-c.small { border-radius: 16px; font-size: 12px; }
+.gp-c.face { border-radius: 50%; font-family: var(--font); font-size: 20px; font-weight: 600; }
+.gp-c.lt { border-radius: 14px 22px 14px 14px; }
+.gp-c.rt { border-radius: 22px 14px 14px 14px; }
+.gp-c .i { width: 20px; height: 20px; }
+.gp-c.zone { background: transparent; border-style: dashed; border-radius: 28px; }
+.gp-c.dpad { background: transparent; border-color: transparent; overflow: visible; }
+.gp-c.selected { z-index: 5; outline: 2px dashed var(--accent); outline-offset: 3px; }
+.gp-c.faded { opacity: .3; border-style: dashed; }
+.gp-ring, .gp-base, .gp-knob, .gp-zone-hint { position: absolute; pointer-events: none; }
+.gp-ring { border: 1px dashed var(--edge); border-radius: 50%; }
+.gp-zone-hint { left: 0; right: 0; font-size: 12px; font-weight: 400; color: var(--dim); }
+.gp-base { border: 2px solid var(--line); border-radius: 50%; background: var(--pad); }
+.gp-knob { border-radius: 50%; background: var(--accent); }
+.zone:not(.active) .gp-base, .zone:not(.active) .gp-knob, .zone.active .gp-ring, .zone.active .gp-zone-hint { display: none; }
+.gp-arm { position: absolute; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--line); color: var(--soft); pointer-events: none; }
+.gp-arm.on { background: var(--accent); border-color: var(--accent); color: var(--ground); }
+.gp-arm.up { left: 41px; top: 0; border-radius: 10px 10px 0 0; }
+.gp-arm.right { left: 82px; top: 41px; border-radius: 0 10px 10px 0; }
+.gp-arm.down { left: 41px; top: 82px; border-radius: 0 0 10px 10px; }
+.gp-arm.left { left: 0; top: 41px; border-radius: 10px 0 0 10px; }
+.gp-arm.right .i { transform: rotate(90deg); }
+.gp-arm.down .i { transform: rotate(180deg); }
+.gp-arm.left .i { transform: rotate(270deg); }
+.gp-hub { position: absolute; left: 41px; top: 41px; width: 42px; height: 42px; background: var(--panel); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); pointer-events: none; }
+.gp-bar { position: absolute; z-index: 6; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; }
+.gp-bar .state { pointer-events: none; white-space: nowrap; }
+.gp-tool { width: 44px; height: 44px; flex-shrink: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--ground); border: 1px solid var(--line); border-radius: 14px; color: var(--soft); touch-action: manipulation; }
+.gp-tool .i { width: 18px; height: 18px; }
+.gp-toolbar { position: absolute; z-index: 7; top: 10px; left: 50%; transform: translateX(-50%); width: min(400px, calc(100% - 24px)); height: 48px; padding: 0 5px; display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
+.gp-toolbar.low { top: auto; bottom: 10px; }
+.gp-toolbar button { flex-shrink: 0; height: 38px; padding: 0 10px; border: 0; border-radius: 11px; font-size: 14px; font-weight: 500; touch-action: manipulation; }
+.gp-reset { background: transparent; color: var(--soft); }
+.gp-done { padding: 0 14px; background: var(--accent); color: var(--ground); font-weight: 600; }
+.gp-hint { flex-grow: 1; min-width: 0; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--soft); }
+.gp-selected { flex-grow: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.gp-selected[hidden] { display: none; }
+.gp-selected span { flex-shrink: 0; font-family: var(--mono); font-size: 12px; }
+.gp-selected input { flex-grow: 1; min-width: 0; margin: 0; accent-color: var(--accent); touch-action: manipulation; }
+.gp-toolbar .gp-selected button { height: 32px; background: var(--ground); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font-size: 13px; }

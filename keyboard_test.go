@@ -21,6 +21,11 @@ func keyName(code uint16) string {
 			return name
 		}
 	}
+	for _, button := range gamepadButtons {
+		if button.code == code {
+			return button.name
+		}
+	}
 	return "unknown"
 }
 
@@ -43,6 +48,8 @@ func (r *recorder) Write(data []byte) (int, error) {
 			r.events = append(r.events, map[uint32]string{0: "up ", 1: "down "}[value]+keyName(code))
 		case evRel:
 			r.events = append(r.events, fmt.Sprintf("rel %d %d", code, int32(value)))
+		case evAbs:
+			r.events = append(r.events, fmt.Sprintf("abs %d %d", code, int32(value)))
 		}
 	}
 	return len(data), nil

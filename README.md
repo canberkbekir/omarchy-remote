@@ -12,6 +12,7 @@ Control your [Omarchy](https://omarchy.org) PC from your phone. Omarchy Remote i
 - **Control:** volume slider and mute, audio output picker, Now Playing with cover art and media keys, plus Lock, Reboot and Shut Down.
 - **Display:** turn the screens off, toggle the night light, and set the brightness of all monitors or of each one.
 - **Input:** hold the phone upright for a trackpad (tap to click, two-finger scroll, a scroll strip, left and right click) or turn it sideways for a full keyboard. You can also type text into the focused window and send or fetch the clipboard.
+- **Game:** turn the phone sideways for a touch controller that the PC sees as an Xbox 360 controller, so Steam and most games work without setup. You can move, resize and hide every control.
 - **Themes:** follows your Omarchy theme, or use your own CSS. Changes show up on the phone without a restart.
 - **One passcode** that is created on first run, with a one-minute lockout after five wrong tries.
 - **Single binary** with the web app embedded. It needs no root access: keyboard and mouse input go through `/dev/uinput`, which systemd gives to the user signed in at the computer.
@@ -123,21 +124,34 @@ These IDs and classes won't be renamed without a note in the release, so `user.c
 | --- | --- |
 | `#login`, `#control` | the sign-in screen and the main app |
 | `#pc-name` | the title |
-| `#view-control`, `#view-display`, `#view-input` | the three tabs' pages |
-| `#tab-control`, `#tab-display`, `#tab-input`, `.tab` | the tab buttons |
+| `#view-control`, `#view-display`, `#view-input`, `#view-game` | the tabs' pages |
+| `#tab-control`, `#tab-display`, `#tab-input`, `#tab-game`, `.tab` | the tab buttons |
 | `#volume`, `#monitors` | the volume section and the brightness list |
 | `#lock`, `#reboot`, `#shutdown` | the power buttons |
-| `#pad`, `#keyboard` | the trackpad and the sideways keyboard |
+| `#pad`, `#keyboard`, `#gamepad` | the trackpad, the sideways keyboard and the controller |
 | `.key`, `.primary`, `.sheet` | buttons, main actions and pop-up sheets |
 
 Anything else in the page may change between versions.
+
+## Gamepad
+
+Open the **Game** tab and turn the phone sideways. The first time, the PC gets a virtual Xbox 360 controller named "PC Remote Gamepad". Steam and games that use SDL see it as a standard Xbox 360 controller.
+
+- **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb.
+- **D-pad:** slide between directions; the corners press two at once.
+- **Rotation lock on?** Tap **Open controller**. It opens sideways anyway, with a close button.
+- **Delay** on the Game tab is the measured round trip to the PC. Home Wi-Fi is usually a few milliseconds; going through Tailscale adds a little.
+
+To change the layout, tap the pencil button on the controller. Drag controls to move them, tap one to resize or hide it, and tap **Done** to save. Layouts are stored on the PC in `~/.config/pc-remote/gamepad.json`, as shares of the screen, so a layout works on any phone and survives reinstalling the Home Screen app.
+
+One phone at a time is the controller. If a second phone opens the Game tab, it takes over. iPhones can't vibrate from a web app, so there's no rumble or button feedback on iPhone; Android vibrates briefly on each press.
 
 ## Uninstall
 
 ```bash
 systemctl --user disable --now pc-remote-web
 rm ~/.config/systemd/user/pc-remote-web.service ~/.local/bin/pc-remote-web ~/.local/bin/pc-remote
-rm -r ~/.config/pc-remote   # your passcode, config and themes
+rm -r ~/.config/pc-remote   # your passcode, config, themes and gamepad layout
 ```
 
 ## The `pc-remote` helper

@@ -254,32 +254,43 @@ func (k *keyboard) handleMessage(message string) error {
 	return nil
 }
 
-func (a *app) handleKeyboard(w http.ResponseWriter, r *http.Request) {
+// acceptSocket opens a WebSocket and checks the passcode. Browsers can't set
+// headers on a WebSocket, so the passcode is the first message. On failure it
+// returns nil and has already answered.
+func (a *app) acceptSocket(w http.ResponseWriter, r *http.Request) *websocket.Conn {
 	address := clientAddress(r)
 	if a.guard.blocked(address) {
 		writeError(w, http.StatusTooManyRequests, "Too many attempts. Wait a minute.")
-		return
+		return nil
 	}
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
-		return
+		return nil
 	}
-	defer conn.CloseNow()
 	conn.SetReadLimit(maxBodyBytes)
 
-	// Browsers can't set headers on a WebSocket, so the first message is the passcode.
 	authContext, cancelAuth := context.WithTimeout(context.Background(), keyboardAuthTimeout)
 	defer cancelAuth()
 	_, supplied, err := conn.Read(authContext)
 	if err != nil {
-		return
+		conn.CloseNow()
+		return nil
 	}
 	if subtle.ConstantTimeCompare(supplied, a.passcode) != 1 {
 		a.guard.recordFailure(address)
 		conn.Close(websocket.StatusPolicyViolation, "Wrong passcode.")
-		return
+		return nil
 	}
 	a.guard.clear(address)
+	return conn
+}
+
+func (a *app) handleKeyboard(w http.ResponseWriter, r *http.Request) {
+	conn := a.acceptSocket(w, r)
+	if conn == nil {
+		return
+	}
+	defer conn.CloseNow()
 
 	device, err := a.keyboardDevice()
 	if err != nil {

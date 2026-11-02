@@ -108,6 +108,7 @@ func (g *loginGuard) clear(address string) {
 }
 
 type app struct {
+	dir      string // ~/.config/pc-remote
 	name     string
 	themes   *themes
 	passcode []byte
@@ -119,6 +120,12 @@ type app struct {
 	keyboardMu         sync.Mutex
 	keyboard           *keyboard
 	endKeyboardSession context.CancelFunc
+
+	gamepadTimeout    time.Duration
+	openGamepad       func() (*gamepad, error)
+	gamepadMu         sync.Mutex
+	gamepad           *gamepad
+	endGamepadSession context.CancelFunc
 }
 
 func loadPasscode(dir string) (string, error) {
@@ -490,12 +497,15 @@ func main() {
 		log.Fatal(err)
 	}
 	a := &app{
+		dir:             dir,
 		name:            settings.Name,
 		themes:          look,
 		passcode:        []byte(passcode),
 		guard:           &loginGuard{failures: map[string]attempt{}},
 		keyboardTimeout: keyboardTimeout,
 		openKeyboard:    openVirtualKeyboard,
+		gamepadTimeout:  gamepadTimeout,
+		openGamepad:     openVirtualGamepad,
 	}
 
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
@@ -512,6 +522,9 @@ func main() {
 	mux.HandleFunc("POST /api/brightness", a.auth(a.handleBrightnessSet))
 	mux.HandleFunc("POST /api/power", a.auth(handlePower))
 	mux.HandleFunc("GET /api/keyboard", a.handleKeyboard)
+	mux.HandleFunc("GET /api/gamepad", a.handleGamepad)
+	mux.HandleFunc("GET /api/gamepad/layout", a.auth(a.handleLayoutRead))
+	mux.HandleFunc("POST /api/gamepad/layout", a.auth(a.handleLayoutSave))
 	mux.HandleFunc("GET /api/art", a.auth(handleArt))
 	mux.HandleFunc("GET /api/outputs", a.auth(handleOutputs))
 	mux.HandleFunc("POST /api/output", a.auth(handleOutput))
