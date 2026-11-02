@@ -142,8 +142,7 @@ Anything else in the page may change between versions.
 
 Open the **Game** tab and turn the phone sideways. The first time, the PC gets a virtual Xbox 360 controller named "PC Remote Gamepad". Steam and games that use SDL see it as a standard Xbox 360 controller.
 
-- **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb. Push past the edge and the stick follows your thumb.
-- **Swipe to aim:** the right stick works like a touchpad, for shooters. The camera turns as fast as your thumb moves and stops when it stops. For a classic stick, tap the pencil, tap the right stick and switch **Aim** to **stick**.
+- **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb.
 - **L3 and R3:** tap a stick, then touch it again and hold. The stick stays clicked while it moves, so you can sprint or melee without letting go. The L3 and R3 buttons work too.
 - **D-pad:** slide between directions; the corners press two at once.
 - **Rotation lock on?** Tap **Open controller**. It opens sideways anyway, with a close button.

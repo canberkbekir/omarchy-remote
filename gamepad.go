@@ -341,7 +341,6 @@ type controlLayout struct {
 	Y      float64 `json:"y"`
 	Size   float64 `json:"size"`
 	Hidden bool    `json:"hidden"`
-	Mode   string  `json:"mode,omitempty"` // the right stick only: "swipe" or "stick"
 }
 
 // layoutControls must match the controls the page draws.
@@ -358,12 +357,6 @@ func (l gamepadLayout) valid() bool {
 	inRange := func(v, low, high float64) bool { return !math.IsNaN(v) && v >= low && v <= high }
 	for id, c := range l.Controls {
 		if !layoutControls[id] || !inRange(c.X, 0, 100) || !inRange(c.Y, 0, 100) || !inRange(c.Size, 60, 160) {
-			return false
-		}
-		if c.Mode != "" && (id != "rs" || (c.Mode != "swipe" && c.Mode != "stick")) {
-			return false
-		}
-		if c.Mode != "" && (id != "rs" || (c.Mode != "swipe" && c.Mode != "stick")) {
 			return false
 		}
 	}
