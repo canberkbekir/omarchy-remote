@@ -158,6 +158,7 @@ function setupGamepad(options) {
     if (padReady) padSocket.send(padMessage());
   }
 
+  // Moves are sent once per frame; presses and releases go out at once.
   function schedulePad() {
     if (!padFrame) padFrame = requestAnimationFrame(() => { padFrame = 0; sendPad(); });
   }
@@ -193,11 +194,20 @@ function setupGamepad(options) {
       if (control.icon) {
         el.innerHTML = `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${PAD_ICONS[control.icon]}</svg>`;
       } else if (control.kind === 'stick') {
-        const ring = (control.w - control.base) / 2;
-        el.innerHTML = `<span class="gp-ring" style="left:${ring}px;top:${(control.h - control.base) / 2 - 12}px;width:${control.base}px;height:${control.base}px"></span>`
-          + `<span class="gp-zone-hint" style="top:${(control.h + control.base) / 2}px"></span>`
-          + `<span class="gp-base" style="width:${control.base}px;height:${control.base}px"></span>`
-          + `<span class="gp-knob" style="width:${control.knob}px;height:${control.knob}px"></span>`;
+        const span = (className, style) => {
+          const part = document.createElement('span');
+          part.className = className;
+          Object.assign(part.style, style);
+          return part;
+        };
+        const base = `${control.base}px`;
+        const knob = `${control.knob}px`;
+        el.append(
+          span('gp-ring', { left: `${(control.w - control.base) / 2}px`, top: `${(control.h - control.base) / 2 - 12}px`, width: base, height: base }),
+          span('gp-zone-hint', { top: `${(control.h + control.base) / 2}px` }),
+          span('gp-base', { width: base, height: base }),
+          span('gp-knob', { width: knob, height: knob }),
+        );
       } else if (control.kind === 'dpad') {
         const arrow = '<svg class="i" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg>';
         el.innerHTML = ['up', 'right', 'down', 'left'].map((dir) => `<span class="gp-arm ${dir}">${arrow}</span>`).join('') + '<span class="gp-hub"></span>';
@@ -228,9 +238,9 @@ function setupGamepad(options) {
     } else if (control.kind === 'dpad') {
       padDpad = { pointer: event.pointerId, dirs: dpadDirs(control, event) };
     }
+    sendPad();
     buzz();
     drawControl(control);
-    schedulePad();
   }
 
   function padMove(control, event) {
@@ -275,8 +285,8 @@ function setupGamepad(options) {
     padPointers.delete(event.pointerId);
     if (padSticks[control.id]?.pointer === event.pointerId) delete padSticks[control.id];
     if (padDpad.pointer === event.pointerId) padDpad = { pointer: null, dirs: {} };
+    sendPad();
     drawControl(control);
-    schedulePad();
   }
 
   function drawControl(control) {

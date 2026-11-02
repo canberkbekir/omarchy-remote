@@ -93,3 +93,19 @@ func (c config) listenAddr() string {
 	}
 	return net.JoinHostPort(host, strconv.Itoa(c.Port))
 }
+
+// listenScope reports whether addr is loopback only, or every interface.
+func listenScope(addr string) (loopback, everywhere bool) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false, false
+	}
+	if host == "" {
+		return false, true
+	}
+	if host == "localhost" {
+		return true, false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback(), ip != nil && ip.IsUnspecified()
+}

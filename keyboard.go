@@ -258,13 +258,15 @@ func (k *keyboard) handleMessage(message string) error {
 // headers on a WebSocket, so the passcode is the first message. On failure it
 // returns nil and has already answered.
 func (a *app) acceptSocket(w http.ResponseWriter, r *http.Request) *websocket.Conn {
-	address := clientAddress(r)
-	if a.guard.blocked(address) {
+	// Counted now: the passcode only arrives after the socket opens.
+	address := clientAddress(r, a.trustProxy)
+	if !a.guard.reserve(address) {
 		writeError(w, http.StatusTooManyRequests, "Too many attempts. Wait a minute.")
 		return nil
 	}
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
+		a.guard.refund(address)
 		return nil
 	}
 	conn.SetReadLimit(maxBodyBytes)
@@ -273,11 +275,11 @@ func (a *app) acceptSocket(w http.ResponseWriter, r *http.Request) *websocket.Co
 	defer cancelAuth()
 	_, supplied, err := conn.Read(authContext)
 	if err != nil {
+		a.guard.refund(address)
 		conn.CloseNow()
 		return nil
 	}
 	if subtle.ConstantTimeCompare(supplied, a.passcode) != 1 {
-		a.guard.recordFailure(address)
 		conn.Close(websocket.StatusPolicyViolation, "Wrong passcode.")
 		return nil
 	}
@@ -323,14 +325,14 @@ func (a *app) handleKeyboard(w http.ResponseWriter, r *http.Request) {
 
 // clientAddress names the device for the passcode lockout. Behind a local proxy
 // such as `tailscale serve`, every request comes from loopback, so the device is
-// read from the X-Forwarded-For entry the proxy appended. Only loopback is trusted:
-// a device on the network cannot make its connection come from this PC.
-func clientAddress(r *http.Request) string {
+// read from the X-Forwarded-For entry the proxy appended. That needs trustProxy
+// and a loopback connection: without a proxy, loopback is a local program.
+func clientAddress(r *http.Request, trustProxy bool) string {
 	address, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
-	if ip := net.ParseIP(address); ip == nil || !ip.IsLoopback() {
+	if ip := net.ParseIP(address); !trustProxy || ip == nil || !ip.IsLoopback() {
 		return address
 	}
 	forwarded := r.Header.Values("X-Forwarded-For")

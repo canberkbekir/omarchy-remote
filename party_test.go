@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -151,8 +152,38 @@ func TestJoinLimitsWrongCodes(t *testing.T) {
 	}
 }
 
+func TestJoinLimitsHoldForTriesSentTogether(t *testing.T) {
+	a, _, _ := partyApp(t)
+	a.party.start()
+	wrong := "ZZZZ"
+	if a.party.view().Code == wrong {
+		wrong = "YYYY"
+	}
+	guesses := func(remote func(i int) string) int {
+		var wg sync.WaitGroup
+		var count atomic.Int32
+		for i := range 100 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if joinRequest(a, wrong, "Guess", remote(i)).Code == http.StatusUnauthorized {
+					count.Add(1)
+				}
+			}()
+		}
+		wg.Wait()
+		return int(count.Load())
+	}
+	if got := guesses(func(int) string { return "192.168.0.50:1" }); got != maxFailures {
+		t.Errorf("one device got %d guesses, want %d", got, maxFailures)
+	}
+	if got := guesses(func(i int) string { return "192.168.1." + strconv.Itoa(i) + ":1" }); got != maxJoinFailures-maxFailures {
+		t.Errorf("many devices got %d more guesses, want %d", got, maxJoinFailures-maxFailures)
+	}
+}
+
 func TestHomeNetworkOnly(t *testing.T) {
-	handler := homeNetworkOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	handler := homeNetworkOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), false)
 	for remote, want := range map[string]int{
 		"192.168.0.20:1":  http.StatusOK,
 		"10.1.2.3:1":      http.StatusOK,
@@ -288,6 +319,70 @@ func TestGuestReconnectsAndPartyEnds(t *testing.T) {
 	send(t, late, token)
 	if code, reason := readClose(t, late); code != statusPartyOver || reason != "ended" {
 		t.Fatalf("late close = %d %q", code, reason)
+	}
+}
+
+func TestNewGuestDoesNotStallOthers(t *testing.T) {
+	a, _, _ := partyApp(t)
+	opening := make(chan struct{})
+	release := make(chan struct{})
+	fast := a.openGuestPad
+	a.party.start()
+	url := playURL(t, a)
+	playing := connect(t, url, joinToken(t, a, "Playing"))
+	a.openGuestPad = func() (*gamepad, error) {
+		close(opening)
+		<-release
+		return fast()
+	}
+	defer close(release)
+	newcomer, _, err := websocket.Dial(context.Background(), url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer newcomer.CloseNow()
+	send(t, newcomer, joinToken(t, a, "New"))
+	<-opening
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	send(t, playing, "l 7", "t 1")
+	if _, msg, err := playing.Read(ctx); err != nil || string(msg) != "t 1" {
+		t.Fatalf("echo while a controller opens = %q, %v", msg, err)
+	}
+	a.party.view()
+}
+
+func TestGuestRemovedWhileControllerOpens(t *testing.T) {
+	a, _, closer := partyApp(t)
+	a.party.start()
+	opening := make(chan struct{})
+	release := make(chan struct{})
+	fast := a.openGuestPad
+	a.openGuestPad = func() (*gamepad, error) {
+		close(opening)
+		<-release
+		return fast()
+	}
+	url := playURL(t, a)
+	conn, _, err := websocket.Dial(context.Background(), url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	send(t, conn, joinToken(t, a, "Gone"))
+	<-opening
+	a.party.remove(2)
+	close(release)
+	if code, reason := readClose(t, conn); code != statusPartyOver || reason != "removed" {
+		t.Fatalf("close = %d %q", code, reason)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for closer.closes.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if closer.closes.Load() != 1 {
+		t.Errorf("controller made after removal should be unplugged once, got %d", closer.closes.Load())
 	}
 }
 

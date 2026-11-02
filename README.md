@@ -56,6 +56,9 @@ This app can type on your keyboard and shut down your computer, so treat access 
 
   Then set `access = "tailscale"` in the config file (below) and restart the service. The app then listens only on this PC, so Tailscale is the only way in. Open `https://<your-pc>.<your-tailnet>.ts.net` on your phone.
 
+- With `access = "lan"`, the app answers only devices with home-network addresses (and Tailscale addresses), even though it listens on every network interface.
+- Starting a party opens the guest port (8378) to your home network until the party ends, even with `access = "tailscale"`. It serves only the join page and the guest controller. Set `guest_port = 0` to turn parties off.
+
 ## Configuration
 
 Settings live in `~/.config/pc-remote/config.toml`. Every setting is optional, and without the file the app uses the defaults below.
@@ -179,7 +182,7 @@ go test ./...
 go build -o pc-remote-web . && ./pc-remote-web
 ```
 
-The web app is `web/index.html` and `web/base.css`. They are embedded into the binary at build time, along with the built-in themes in `themes/`.
+The web app is `web/index.html`, `web/app.js` and `web/base.css`, and the guest page is `web/join.html` with `web/join.js`. They are embedded into the binary at build time, along with the built-in themes in `themes/`. Keep scripts in files: the Content-Security-Policy blocks inline scripts and `style=""` attributes.
 
 New themes are welcome as pull requests: add `themes/<name>.css` with a screenshot.
 

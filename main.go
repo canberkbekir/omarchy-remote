@@ -80,25 +80,57 @@ type loginGuard struct {
 	failures map[string]attempt
 }
 
+// pruneLocked forgets addresses quiet for the lockout time.
+func (g *loginGuard) pruneLocked() {
+	for address, a := range g.failures {
+		if time.Since(a.last) >= lockoutDuration {
+			delete(g.failures, address)
+		}
+	}
+}
+
 func (g *loginGuard) blocked(address string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	a := g.failures[address]
-	if a.count < maxFailures {
-		return false
-	}
-	if time.Since(a.last) < lockoutDuration {
-		return true
-	}
-	delete(g.failures, address)
-	return false
+	g.pruneLocked()
+	return g.failures[address].count >= maxFailures
 }
 
 func (g *loginGuard) recordFailure(address string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	g.pruneLocked()
 	a := g.failures[address]
 	g.failures[address] = attempt{a.count + 1, time.Now()}
+}
+
+// reserve counts a try before it is checked, so tries sent together can't all
+// slip under the limit. It reports false when the address is locked out.
+func (g *loginGuard) reserve(address string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.pruneLocked()
+	a := g.failures[address]
+	if a.count >= maxFailures {
+		return false
+	}
+	g.failures[address] = attempt{a.count + 1, time.Now()}
+	return true
+}
+
+// refund gives back a reserved try that never got to guess.
+func (g *loginGuard) refund(address string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	a, ok := g.failures[address]
+	if !ok {
+		return
+	}
+	if a.count <= 1 {
+		delete(g.failures, address)
+		return
+	}
+	g.failures[address] = attempt{a.count - 1, a.last}
 }
 
 func (g *loginGuard) clear(address string) {
@@ -108,12 +140,13 @@ func (g *loginGuard) clear(address string) {
 }
 
 type app struct {
-	dir      string // ~/.config/pc-remote
-	name     string
-	themes   *themes
-	passcode []byte
-	guard    *loginGuard
-	ddc      sync.Mutex // Monitors handle one DDC/CI request at a time.
+	dir        string // ~/.config/pc-remote
+	name       string
+	themes     *themes
+	passcode   []byte
+	guard      *loginGuard
+	trustProxy bool       // listening on loopback, behind `tailscale serve`
+	ddc        sync.Mutex // Monitors handle one DDC/CI request at a time.
 
 	keyboardTimeout    time.Duration
 	openKeyboard       func() (*keyboard, error)
@@ -266,6 +299,22 @@ func writeError(w http.ResponseWriter, code int, message string) {
 	writeJSON(w, code, map[string]string{"error": message})
 }
 
+// Scripts only from this server; https styles, fonts and images are for user.css.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; connect-src 'self' ws: wss:; " +
+	"style-src 'self' https:; font-src 'self' https: data:; img-src 'self' blob: data: https:; " +
+	"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func writeStatus(w http.ResponseWriter) {
 	s, err := readStatus()
 	if err != nil {
@@ -290,7 +339,7 @@ func decodeBodyLimit(w http.ResponseWriter, r *http.Request, target any, limit i
 
 func (a *app) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		address := clientAddress(r)
+		address := clientAddress(r, a.trustProxy)
 		if a.guard.blocked(address) {
 			writeError(w, http.StatusTooManyRequests, "Too many attempts. Wait a minute.")
 			return
@@ -503,12 +552,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	addr := settings.listenAddr()
+	loopback, everywhere := listenScope(addr)
 	a := &app{
 		dir:             dir,
 		name:            settings.Name,
 		themes:          look,
 		passcode:        []byte(passcode),
 		guard:           &loginGuard{failures: map[string]attempt{}},
+		trustProxy:      loopback,
 		keyboardTimeout: keyboardTimeout,
 		openKeyboard:    openVirtualKeyboard,
 		gamepadTimeout:  gamepadTimeout,
@@ -552,10 +604,16 @@ func main() {
 		static.ServeHTTP(w, r)
 	})
 
-	addr := settings.listenAddr()
+	var handler http.Handler = mux
+	if everywhere {
+		handler = homeNetworkOnly(handler, true)
+	}
+	if !loopback {
+		log.Print("Serving plain HTTP: devices on the network can see the passcode. See Security in the README for Tailscale.")
+	}
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           securityHeaders(handler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

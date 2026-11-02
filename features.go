@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"hash/fnv"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +15,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 	"unicode/utf8"
 )
 
@@ -61,11 +66,8 @@ func readTrack() (*track, string) {
 		Length:   length / 1e6,
 	}
 	art := fields[4]
-	switch {
-	case strings.HasPrefix(art, "https://"):
-		t.Art = art
-	case strings.HasPrefix(art, "file://"):
-		// The phone can't open the PC's files, so local art is served by /api/art.
+	// Served by /api/art, so the phone never contacts the cover's server.
+	if strings.HasPrefix(art, "https://") || strings.HasPrefix(art, "file://") {
 		h := fnv.New64a()
 		h.Write([]byte(art))
 		t.Art = "/api/art?v=" + strconv.FormatUint(h.Sum64(), 36)
@@ -73,21 +75,68 @@ func readTrack() (*track, string) {
 	return t, art
 }
 
-// handleArt serves the current track's local cover image. The path comes
-// from the player, never from the request.
+var errNoArt = errors.New("no cover art")
+
+// publicOnly keeps cover fetches away from this PC and the local network. It
+// checks the address actually dialed, so redirects and DNS can't get around it.
+func publicOnly(network, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	ip := net.ParseIP(host)
+	if err != nil || ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || tailnetRange.Contains(ip) {
+		return errNoArt
+	}
+	return nil
+}
+
+var artClient = &http.Client{
+	Timeout: 5 * time.Second,
+	Transport: &http.Transport{
+		DialContext:       (&net.Dialer{Control: publicOnly}).DialContext,
+		ForceAttemptHTTP2: true,
+	},
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" || len(via) >= 5 {
+			return errNoArt
+		}
+		return nil
+	},
+}
+
+func readArt(art string) ([]byte, error) {
+	location, err := url.Parse(art)
+	if err != nil {
+		return nil, err
+	}
+	switch location.Scheme {
+	case "file":
+		info, err := os.Stat(location.Path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > maxArtBytes {
+			return nil, errNoArt
+		}
+		return os.ReadFile(location.Path)
+	case "https":
+		resp, err := artClient.Get(location.String())
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, errNoArt
+		}
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxArtBytes+1))
+		if err != nil || len(data) > maxArtBytes {
+			return nil, errNoArt
+		}
+		return data, nil
+	}
+	return nil, errNoArt
+}
+
+// handleArt serves the current track's cover. The URL comes from the player,
+// never from the request.
 func handleArt(w http.ResponseWriter, r *http.Request) {
 	_, art := readTrack()
-	location, err := url.Parse(art)
-	if err != nil || location.Scheme != "file" {
-		writeError(w, http.StatusNotFound, "No cover art.")
-		return
-	}
-	info, err := os.Stat(location.Path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > maxArtBytes {
-		writeError(w, http.StatusNotFound, "No cover art.")
-		return
-	}
-	data, err := os.ReadFile(location.Path)
+	data, err := readArt(art)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No cover art.")
 		return

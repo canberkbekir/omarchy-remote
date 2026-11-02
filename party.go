@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -43,6 +44,7 @@ const (
 
 var (
 	errNoParty   = errors.New("no party")
+	errBusy      = errors.New("too many wrong codes")
 	errWrongCode = errors.New("wrong code")
 	errFull      = errors.New("party full")
 	errNoGuest   = errors.New("unknown guest")
@@ -57,7 +59,7 @@ type guest struct {
 	slot      int
 	name      string
 	token     string
-	delay     int // ms, as the phone measured it; 0 until known
+	delay     atomic.Int32 // ms, as the phone measured it; 0 until known
 	pad       *gamepad
 	connected bool
 	conn      *websocket.Conn    // the phone's current connection
@@ -157,43 +159,52 @@ func (p *party) newCode() error {
 // end removes every guest and closes the party.
 func (p *party) end() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	var unplug []*gamepad
 	for slot := range p.guests {
-		p.removeLocked(slot, "ended")
+		unplug = append(unplug, p.removeLocked(slot, "ended"))
 	}
 	p.code = ""
+	p.mu.Unlock()
+	closePads(unplug...)
 }
 
 func (p *party) remove(slot int) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.removeLocked(slot, "removed")
+	pad := p.removeLocked(slot, "removed")
+	p.mu.Unlock()
+	closePads(pad)
 }
 
 // removeLocked tells the phone why it's leaving; the close also ends its
 // session. (Cancelling the session first would drop the connection before the
-// reason got out.) The controller is unplugged here if the phone is away, or
-// by the connection handler as it leaves.
-func (p *party) removeLocked(slot int, reason string) {
+// reason got out.) If the phone is away, it returns the controller to unplug
+// after unlocking; otherwise the connection handler unplugs it.
+func (p *party) removeLocked(slot int, reason string) *gamepad {
 	g := p.guests[slot]
 	if g == nil {
-		return
+		return nil
 	}
 	delete(p.guests, slot)
 	g.reason = reason
 	p.gone[g.token] = reason
 	if g.connected {
 		go g.conn.Close(statusPartyOver, reason)
-	} else if g.pad != nil {
-		g.pad.close()
+		return nil
+	}
+	return g.pad
+}
+
+func closePads(pads ...*gamepad) {
+	for _, pad := range pads {
+		if pad != nil {
+			pad.close()
+		}
 	}
 }
 
-// tooManyFailures reports whether wrong codes from all devices together have
+// tooManyFailuresLocked reports whether wrong codes from all devices together
 // hit the limit within the last minute.
-func (p *party) tooManyFailures() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (p *party) tooManyFailuresLocked() bool {
 	cutoff := time.Now().Add(-lockoutDuration)
 	recent := p.failures[:0]
 	for _, at := range p.failures {
@@ -210,6 +221,9 @@ func (p *party) join(code, name string) (*guest, error) {
 	defer p.mu.Unlock()
 	if p.code == "" {
 		return nil, errNoParty
+	}
+	if p.tooManyFailuresLocked() {
+		return nil, errBusy
 	}
 	if subtle.ConstantTimeCompare([]byte(strings.ToUpper(strings.TrimSpace(code))), []byte(p.code)) != 1 {
 		p.failures = append(p.failures, time.Now())
@@ -230,30 +244,50 @@ func (p *party) join(code, name string) (*guest, error) {
 	return nil, errFull
 }
 
-// connect starts a phone's connection for a guest, ending any older one from
-// the same guest, and makes their controller on first use.
-func (p *party) connect(token string, conn *websocket.Conn, openPad func() (*gamepad, error)) (*guest, context.Context, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// findLocked returns the guest with this token, or why it's gone.
+func (p *party) findLocked(token string) (*guest, error) {
 	var g *guest
 	for _, candidate := range p.guests {
 		if subtle.ConstantTimeCompare([]byte(token), []byte(candidate.token)) == 1 {
 			g = candidate
 		}
 	}
-	if g == nil {
-		// A phone that was away when it was removed still learns why.
-		if reason, ok := p.gone[token]; ok {
-			return nil, nil, &leftError{reason}
-		}
-		return nil, nil, errNoGuest
+	if g != nil {
+		return g, nil
 	}
-	if g.pad == nil {
-		pad, err := openPad()
-		if err != nil {
+	if reason, ok := p.gone[token]; ok {
+		return nil, &leftError{reason}
+	}
+	return nil, errNoGuest
+}
+
+// connect starts a phone's connection for a guest, ending any older one from
+// the same guest, and makes their controller on first use. That takes half a
+// second, so it happens unlocked, not stalling the other players.
+func (p *party) connect(token string, conn *websocket.Conn, openPad func() (*gamepad, error)) (*guest, context.Context, error) {
+	p.mu.Lock()
+	g, err := p.findLocked(token)
+	needPad := g != nil && g.pad == nil
+	p.mu.Unlock()
+	if err != nil {
+		return nil, nil, err
+	}
+	var pad *gamepad
+	if needPad {
+		if pad, err = openPad(); err != nil {
 			return nil, nil, err
 		}
-		g.pad = pad
+	}
+
+	p.mu.Lock()
+	if g.reason != "" {
+		reason := g.reason
+		p.mu.Unlock()
+		closePads(pad)
+		return nil, nil, &leftError{reason}
+	}
+	if g.pad == nil {
+		g.pad, pad = pad, nil
 	}
 	if g.connected {
 		g.end()
@@ -263,6 +297,8 @@ func (p *party) connect(token string, conn *websocket.Conn, openPad func() (*gam
 	g.conn = conn
 	g.session = session
 	g.end = end
+	p.mu.Unlock()
+	closePads(pad)
 	return g, session, nil
 }
 
@@ -270,32 +306,28 @@ func (p *party) connect(token string, conn *websocket.Conn, openPad func() (*gam
 // guest was removed meanwhile.
 func (p *party) disconnect(g *guest, session context.Context) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if g.reason != "" {
-		g.pad.close()
-		return
-	}
+	removed := g.reason != ""
 	// A newer connection from the same phone may have taken over already.
-	if g.session == session {
+	if !removed && g.session == session {
 		g.connected = false
+	}
+	p.mu.Unlock()
+	if removed {
+		closePads(g.pad)
 	}
 }
 
 // leave removes the guest with this token, when they tap Leave game.
 func (p *party) leave(token string) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	var unplug []*gamepad
 	for slot, g := range p.guests {
 		if subtle.ConstantTimeCompare([]byte(token), []byte(g.token)) == 1 {
-			p.removeLocked(slot, "left")
+			unplug = append(unplug, p.removeLocked(slot, "left"))
 		}
 	}
-}
-
-func (p *party) setDelay(g *guest, ms int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	g.delay = ms
+	p.mu.Unlock()
+	closePads(unplug...)
 }
 
 type playerView struct {
@@ -319,7 +351,7 @@ func (p *party) view() partyView {
 	v := partyView{Active: p.code != "", Code: p.code, Players: []playerView{}}
 	for slot := firstGuestSlot; slot <= lastGuestSlot; slot++ {
 		if g := p.guests[slot]; g != nil {
-			v.Players = append(v.Players, playerView{Slot: slot, Name: g.name, Connected: g.connected, Delay: g.delay})
+			v.Players = append(v.Players, playerView{Slot: slot, Name: g.name, Connected: g.connected, Delay: int(g.delay.Load())})
 		}
 	}
 	return v
@@ -411,14 +443,34 @@ func (a *app) handlePartyChange(w http.ResponseWriter, r *http.Request) {
 	a.handlePartyRead(w, r)
 }
 
-// homeNetworkOnly refuses addresses outside the home network, so the guest
-// port stays private even if the router forwards it by mistake.
-func homeNetworkOnly(next http.Handler) http.Handler {
+// Tailscale's IPv4 range; its IPv6 range is already private.
+var _, tailnetRange, _ = net.ParseCIDR("100.64.0.0/10")
+
+// homeNetworkOnly refuses addresses outside the home network (and the tailnet,
+// if allowed), so a port stays private even if the router forwards it by mistake.
+func homeNetworkOnly(next http.Handler, tailnet bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		ip := net.ParseIP(host)
-		if err != nil || ip == nil || !(ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()) {
-			http.Error(w, "Only devices on the home network can join.", http.StatusForbidden)
+		home := ip != nil && (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || tailnet && tailnetRange.Contains(ip))
+		if err != nil || !home {
+			http.Error(w, "Only devices on the home network can connect.", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// addressHostOnly refuses a Host that is a name, which only DNS rebinding
+// would send: the party link uses this PC's IP.
+func addressHostOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = strings.Trim(r.Host, "[]")
+		}
+		if host != "localhost" && net.ParseIP(host) == nil {
+			http.Error(w, "Open the link from the host’s invite.", http.StatusMisdirectedRequest)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -435,7 +487,7 @@ func (a *app) guestHandler() http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFileFS(w, r, site, "join.html")
 	})
-	for _, name := range []string{"/base.css", "/gamepad.js", "/icon-180.png"} {
+	for _, name := range []string{"/base.css", "/gamepad.js", "/join.js", "/icon-180.png"} {
 		mux.HandleFunc("GET "+name, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache")
 			files.ServeHTTP(w, r)
@@ -447,7 +499,7 @@ func (a *app) guestHandler() http.Handler {
 	mux.HandleFunc("POST /api/join", a.handleJoin)
 	mux.HandleFunc("POST /api/leave", a.handleLeave)
 	mux.HandleFunc("GET /api/play", a.handlePlay)
-	return homeNetworkOnly(mux)
+	return securityHeaders(homeNetworkOnly(addressHostOnly(mux), false))
 }
 
 func (a *app) startGuestServer() error {
@@ -506,12 +558,9 @@ func (a *app) handleLeave(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// handleJoin counts a try before checking the code, so requests sent
+// together can't all get past the limits.
 func (a *app) handleJoin(w http.ResponseWriter, r *http.Request) {
-	address := clientAddress(r)
-	if a.guestGuard.blocked(address) || a.party.tooManyFailures() {
-		writeError(w, http.StatusTooManyRequests, "Too many tries. Wait a minute.")
-		return
-	}
 	var body struct {
 		Code string `json:"code"`
 		Name string `json:"name"`
@@ -524,14 +573,22 @@ func (a *app) handleJoin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Enter your name.")
 		return
 	}
+	address := clientAddress(r, false)
+	if !a.guestGuard.reserve(address) {
+		writeError(w, http.StatusTooManyRequests, "Too many tries. Wait a minute.")
+		return
+	}
 	g, err := a.party.join(body.Code, name)
 	switch {
+	case errors.Is(err, errBusy):
+		writeError(w, http.StatusTooManyRequests, "Too many tries. Wait a minute.")
 	case errors.Is(err, errNoParty):
+		a.guestGuard.clear(address)
 		writeError(w, http.StatusNotFound, "There’s no game right now. Ask the host to start one.")
 	case errors.Is(err, errWrongCode):
-		a.guestGuard.recordFailure(address)
 		writeError(w, http.StatusUnauthorized, "That code didn’t work. Check it with the host.")
 	case errors.Is(err, errFull):
+		a.guestGuard.clear(address)
 		writeError(w, http.StatusConflict, "The game is full.")
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, "Couldn’t join.")
@@ -573,5 +630,5 @@ func (a *app) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer a.party.disconnect(g, session)
-	playGamepad(session, conn, g.pad, a.gamepadTimeout, func(ms int) { a.party.setDelay(g, ms) })
+	playGamepad(session, conn, g.pad, a.gamepadTimeout, func(ms int) { g.delay.Store(int32(ms)) })
 }

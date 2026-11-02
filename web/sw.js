@@ -1,5 +1,5 @@
-const CACHE = 'pc-remote-v4';
-const SHELL = ['/', '/base.css', '/gamepad.js', '/theme.css', '/user.css', '/manifest.webmanifest', '/icon-180.png', '/icon-512.png'];
+const CACHE = 'pc-remote-v5';
+const SHELL = ['/', '/base.css', '/gamepad.js', '/app.js', '/theme.css', '/user.css', '/manifest.webmanifest', '/icon-180.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
