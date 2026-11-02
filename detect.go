@@ -43,6 +43,7 @@ type system struct {
 	Checks   []check
 
 	Existing     config // the current settings, or the defaults
+	HasPasscode  bool
 	HasConfig    bool
 	KeepPort     bool // port and listen were set by hand; keep them
 	KeepListen   bool
@@ -130,6 +131,9 @@ func detectSystem(dir string) system {
 
 	s.Existing, s.HasConfig, s.KeepPort, s.KeepListen = readExisting(dir)
 	s.CustomThemes = customThemes(dir)
+	if info, err := os.Stat(filepath.Join(dir, "passcode")); err == nil && info.Size() > 0 {
+		s.HasPasscode = true
+	}
 	s.OmarchyTheme = omarchyThemeName()
 
 	s.LANAddress = lanAddress()

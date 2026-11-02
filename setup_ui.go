@@ -45,6 +45,8 @@ const (
 	stageName
 	stageTheme
 	stageParty
+	stagePasscode
+	stagePasscodeEntry // typing a passcode of your own, part of the passcode step
 	stageFirewall
 	stageReview
 )
@@ -64,6 +66,9 @@ type wizard struct {
 	stage     stage
 	cursor    int
 	name      textinput.Model
+	secret    [2]textinput.Model // the new passcode, then the same again
+	typing    int                // which of the two has focus
+	problem   string             // why the typed passcode was refused
 	width     int
 	help      bool
 	confirmed bool
@@ -78,13 +83,21 @@ func newWizard(s system, a answers) wizard {
 	name.Prompt = "› "
 	w := wizard{s: s, answers: a, name: name, width: 80, st: newStyles(os.Stdout)}
 	w.name.PromptStyle = w.st.accent
+	for i := range w.secret {
+		w.secret[i] = textinput.New()
+		w.secret[i].EchoMode = textinput.EchoPassword
+		w.secret[i].EchoCharacter = '•'
+		w.secret[i].CharLimit = maxPasscodeLength
+		w.secret[i].Prompt = "› "
+		w.secret[i].PromptStyle = w.st.accent
+	}
 	w.enter(stageCheck)
 	return w
 }
 
 // steps are the numbered questions; the firewall one shows only when needed.
 func (w wizard) steps() []stage {
-	steps := []stage{stageConnect, stageName, stageTheme, stageParty}
+	steps := []stage{stageConnect, stageName, stageTheme, stageParty, stagePasscode}
 	if len(w.s.firewallBlocks(w.answers)) > 0 {
 		steps = append(steps, stageFirewall)
 	}
@@ -102,11 +115,26 @@ func (w *wizard) enter(st stage) tea.Cmd {
 			w.cursor = i
 		}
 	}
-	if st == stageName {
-		return w.name.Focus()
-	}
 	w.name.Blur()
+	switch st {
+	case stageName:
+		return w.name.Focus()
+	case stagePasscodeEntry:
+		w.typing, w.problem = 0, ""
+		w.secret[0].SetValue(w.answers.Passcode)
+		w.secret[1].SetValue(w.answers.Passcode)
+		w.secret[1].Blur()
+		return w.secret[0].Focus()
+	}
 	return nil
+}
+
+// step is the numbered step a stage belongs to.
+func (w wizard) step() stage {
+	if w.stage == stagePasscodeEntry {
+		return stagePasscode
+	}
+	return w.stage
 }
 
 func (w wizard) currentValue() string {
@@ -122,6 +150,10 @@ func (w wizard) currentValue() string {
 		return yesNo(a.Party)
 	case stageFirewall:
 		return yesNo(a.OpenFirewall)
+	case stagePasscode:
+		if a.Passcode != "" {
+			return "choose"
+		}
 	}
 	return ""
 }
@@ -139,7 +171,7 @@ func (w *wizard) next() tea.Cmd {
 		return w.enter(stageConnect)
 	}
 	steps := w.steps()
-	i := slices.Index(steps, w.stage)
+	i := slices.Index(steps, w.step())
 	if i+1 < len(steps) {
 		return w.enter(steps[i+1])
 	}
@@ -153,6 +185,8 @@ func (w *wizard) back() tea.Cmd {
 	case stageReview:
 		steps := w.steps()
 		return w.enter(steps[len(steps)-1])
+	case stagePasscodeEntry:
+		return w.enter(stagePasscode)
 	}
 	steps := w.steps()
 	i := slices.Index(steps, w.stage)
@@ -183,6 +217,9 @@ func (w wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			w.name, cmd = w.name.Update(msg)
 			return w, cmd
+		}
+		if w.stage == stagePasscodeEntry {
+			return w.typePasscode(msg)
 		}
 		choices := w.choices()
 		switch msg.String() {
@@ -231,6 +268,11 @@ func (w wizard) pick(value string) (tea.Model, tea.Cmd) {
 		w.answers.Party = yes
 	case stageFirewall:
 		w.answers.OpenFirewall = yes
+	case stagePasscode:
+		if value == "choose" {
+			return w, w.enter(stagePasscodeEntry)
+		}
+		w.answers.Passcode = ""
 	case stageReview:
 		if yes {
 			w.confirmed = true
@@ -239,6 +281,35 @@ func (w wizard) pick(value string) (tea.Model, tea.Cmd) {
 		return w, w.enter(stageConnect)
 	}
 	return w, w.next()
+}
+
+// typePasscode handles keys while choosing a passcode: enter moves to the
+// second box, then checks that both match.
+func (w wizard) typePasscode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "enter" || msg.String() == "tab" {
+		if w.typing == 0 {
+			if w.problem = passcodeProblem(w.secret[0].Value()); w.problem != "" {
+				return w, nil
+			}
+			w.typing = 1
+			w.secret[0].Blur()
+			return w, w.secret[1].Focus()
+		}
+		if msg.String() == "tab" {
+			return w, nil
+		}
+		if w.secret[0].Value() != w.secret[1].Value() {
+			w.problem = "The two don't match. Type it again."
+			w.secret[1].SetValue("")
+			return w, nil
+		}
+		w.answers.Passcode = w.secret[0].Value()
+		return w, w.next()
+	}
+	w.problem = ""
+	var cmd tea.Cmd
+	w.secret[w.typing], cmd = w.secret[w.typing].Update(msg)
+	return w, cmd
 }
 
 // question is what a stage asks: a title, a sentence on why, a longer
@@ -334,6 +405,29 @@ func (w wizard) question() question {
 			},
 		}
 
+	case stagePasscode:
+		first := choice{value: "keep", title: "Keep the current one", tag: "recommended",
+			desc: "Phones that are signed in stay signed in."}
+		if !s.HasPasscode {
+			first = choice{value: "keep", title: "Make one for me", tag: "recommended",
+				desc: "A random 10-character passcode, shown at the end."}
+		}
+		return question{
+			title: "Which passcode should phones use?",
+			why:   "Anyone with the passcode can control this PC, so keep it to yourself.",
+			more: "The passcode is asked once on each phone, then remembered. Five wrong tries block that device for a minute. " +
+				"You can see it any time with pc-remote passcode.",
+			choices: []choice{first, {value: "choose", title: "Choose my own",
+				desc: "Something you'll remember. Phones sign in again with it."}},
+		}
+
+	case stagePasscodeEntry:
+		return question{
+			title: "Choose your passcode",
+			why: fmt.Sprintf("At least %d characters, no spaces. Longer is safer: a short one or one that's only digits is easy to guess.",
+				minPasscodeLength),
+		}
+
 	case stageFirewall:
 		ports := s.firewallBlocks(a)
 		what := "the app"
@@ -418,6 +512,15 @@ func (w wizard) View() string {
 		b.WriteString(indent(st.dim.Render("enter keeps this name · esc back"), 2))
 		return b.String() + "\n"
 	}
+	if w.stage == stagePasscodeEntry {
+		b.WriteString("  " + st.dim.Render("New passcode   ") + w.secret[0].View() + "\n")
+		b.WriteString("  " + st.dim.Render("Type it again  ") + w.secret[1].View() + "\n\n")
+		if w.problem != "" {
+			b.WriteString("  " + st.bad.Render("✗ "+w.problem) + "\n\n")
+		}
+		b.WriteString(indent(st.dim.Render("enter next · esc back · ctrl+c quit"), 2))
+		return b.String() + "\n"
+	}
 	for i, c := range q.choices {
 		b.WriteString(w.renderChoice(c, i == w.cursor, width))
 	}
@@ -466,8 +569,8 @@ func (w wizard) stepBar() string {
 	st := w.st
 	steps := w.steps()
 	names := map[stage]string{stageConnect: "Connect", stageName: "Name", stageTheme: "Colors",
-		stageParty: "Party", stageFirewall: "Firewall"}
-	at := slices.Index(steps, w.stage)
+		stageParty: "Party", stagePasscode: "Passcode", stageFirewall: "Firewall"}
+	at := slices.Index(steps, w.step())
 	var parts []string
 	for i, s := range steps {
 		switch {
@@ -505,7 +608,14 @@ func (w wizard) review(width int) string {
 	if a.Party {
 		party = "Allowed"
 	}
-	rows := [][2]string{{"Connect", connect}, {"Name", a.Name}, {"Colors", theme}, {"Party", party}}
+	passcode := "Keep the current one"
+	switch {
+	case a.Passcode != "":
+		passcode = "Your own"
+	case !s.HasPasscode:
+		passcode = "Made for you"
+	}
+	rows := [][2]string{{"Connect", connect}, {"Name", a.Name}, {"Colors", theme}, {"Party", party}, {"Passcode", passcode}}
 
 	var b strings.Builder
 	b.WriteString(indent(st.title.Render("Your choices"), 2) + "\n")

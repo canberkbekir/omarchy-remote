@@ -187,12 +187,12 @@ func TestWizardWalkthrough(t *testing.T) {
 	if w.answers.Access != "both" || w.stage != stageName {
 		t.Fatalf("access = %q, stage = %v", w.answers.Access, w.stage)
 	}
-	w = press(w, "enter", "enter", "down", "enter") // keep the name and theme, no party
-	if w.answers.Name != "archbox" || w.answers.Party || w.stage != stageReview {
+	w = press(w, "enter", "enter", "down", "enter", "enter") // keep the name, theme and passcode, no party
+	if w.answers.Name != "archbox" || w.answers.Party || w.answers.Passcode != "" || w.stage != stageReview {
 		t.Fatalf("answers = %+v, stage = %v", w.answers, w.stage)
 	}
 	w = press(w, "esc")
-	if w.stage != stageParty {
+	if w.stage != stagePasscode {
 		t.Fatalf("esc from review went to %v", w.stage)
 	}
 	w = press(w, "enter", "enter")
@@ -274,5 +274,87 @@ func TestBothAccess(t *testing.T) {
 	addresses := appAddresses(s, a)
 	if len(addresses) != 2 || addresses[0].url != "https://pc.tail.ts.net" || addresses[1].url != "http://192.168.1.42:8377" {
 		t.Errorf("addresses = %v", addresses)
+	}
+}
+
+func TestPasscodeProblem(t *testing.T) {
+	for p, ok := range map[string]bool{
+		"hunter2":               true,
+		"28072000":              true,
+		"abc12":                 false,
+		"two words":             false,
+		strings.Repeat("x", 65): false,
+	} {
+		if got := passcodeProblem(p) == ""; got != ok {
+			t.Errorf("passcodeProblem(%q) accepted = %v, want %v", p, got, ok)
+		}
+	}
+}
+
+func TestWizardPasscodeStep(t *testing.T) {
+	s := testSystem(t)
+	s.HasPasscode = true
+	w := newWizard(s, defaultAnswers(s))
+	w = press(w, "enter", "enter", "enter", "enter", "enter") // to the passcode step
+	if w.stage != stagePasscode {
+		t.Fatalf("stage = %v", w.stage)
+	}
+	if c := w.choices(); c[0].title != "Keep the current one" || c[1].value != "choose" || len(c) != 2 {
+		t.Fatalf("choices = %+v", c)
+	}
+
+	w = press(w, "down", "enter")
+	if w.stage != stagePasscodeEntry {
+		t.Fatalf("stage = %v", w.stage)
+	}
+	w = press(w, "abc", "enter")
+	if w.problem == "" || w.typing != 0 {
+		t.Error("a short passcode was accepted")
+	}
+	w = press(w, "def1", "enter", "abcdef2", "enter")
+	if w.problem == "" || w.answers.Passcode != "" {
+		t.Error("passcodes that don't match were accepted")
+	}
+	w = press(w, "abcdef1", "enter")
+	if w.answers.Passcode != "abcdef1" || w.stage != stageReview {
+		t.Fatalf("passcode = %q, stage = %v", w.answers.Passcode, w.stage)
+	}
+	if !strings.Contains(w.View(), "Your own") || strings.Contains(w.View(), "abcdef1") {
+		t.Error("review should say a new passcode was chosen, without showing it")
+	}
+	if got := labels(plan(s, w.answers)); !slices.Contains(got, "Save your new passcode") {
+		t.Errorf("plan = %q", got)
+	}
+
+	// Going back to keep the current one drops the typed passcode.
+	w = press(w, "esc", "up", "enter")
+	if w.answers.Passcode != "" {
+		t.Error("typed passcode kept after choosing to keep the current one")
+	}
+}
+
+func TestWizardFirstPasscode(t *testing.T) {
+	s := testSystem(t)
+	w := newWizard(s, defaultAnswers(s))
+	w = press(w, "enter", "enter", "enter", "enter", "enter")
+	if c := w.choices(); c[0].title != "Make one for me" {
+		t.Errorf("choices without a passcode = %+v", c)
+	}
+}
+
+func TestSavePasscode(t *testing.T) {
+	dir := t.TempDir()
+	if err := savePasscode(dir, "abcdef1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := loadPasscode(dir); err != nil || got != "abcdef1" {
+		t.Errorf("loadPasscode = %q, %v", got, err)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "passcode"))
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v", info.Mode())
+	}
+	if savePasscode(dir, "a b c d e") == nil {
+		t.Error("saved a passcode with spaces")
 	}
 }

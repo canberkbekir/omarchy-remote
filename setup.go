@@ -23,6 +23,7 @@ type answers struct {
 	Install      bool // install the missing packages
 	Access       string
 	OpenFirewall bool
+	Passcode     string // one the owner chose; empty keeps the current one or makes one
 	Name         string
 	Theme        string
 	Party        bool
@@ -91,6 +92,12 @@ func plan(s system, a answers) []action {
 		Label: "Save settings to " + tildePath(path),
 		Run:   func() error { return saveConfig(path, renderConfig(s, a)) },
 	})
+	if a.Passcode != "" {
+		actions = append(actions, action{
+			Label: "Save your new passcode",
+			Run:   func() error { return savePasscode(s.Dir, a.Passcode) },
+		})
+	}
 	if !s.ServiceUnit {
 		actions = append(actions, action{
 			Label: "Add the background service",
@@ -169,6 +176,33 @@ func saveConfig(path, content string) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+const (
+	minPasscodeLength = 6
+	maxPasscodeLength = 64
+)
+
+// passcodeProblem says why a chosen passcode can't be used, or "" if it can.
+// The login drops spaces, so a passcode can't have any.
+func passcodeProblem(p string) string {
+	switch {
+	case strings.IndexFunc(p, unicode.IsSpace) >= 0:
+		return "Spaces aren't allowed."
+	case len([]rune(p)) < minPasscodeLength:
+		return fmt.Sprintf("Use at least %d characters.", minPasscodeLength)
+	case len(p) > maxPasscodeLength:
+		return fmt.Sprintf("Use at most %d characters.", maxPasscodeLength)
+	}
+	return ""
+}
+
+// savePasscode replaces the passcode; the server reads it when it starts.
+func savePasscode(dir, p string) error {
+	if problem := passcodeProblem(p); problem != "" {
+		return errors.New(problem)
+	}
+	return saveConfig(filepath.Join(dir, "passcode"), p+"\n")
 }
 
 // installUnit adds a user service for this binary, for installs that didn't ship one.

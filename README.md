@@ -71,7 +71,7 @@ cd omarchy-remote
 Run the same command again to update. Either way, setup walks you through the rest:
 
 1. **A check of the PC.** Anything missing (like `playerctl` for the media controls) is named by the feature it affects, and setup offers to install it.
-2. **A few questions:** how your phone connects (same Wi-Fi or Tailscale), the name shown in the app, its colors, and whether friends can join games. Press `?` on a question for more detail.
+2. **A few questions:** how your phone connects (same Wi-Fi, Tailscale or both), the name shown in the app, its colors, whether friends can join games, and the passcode: keep the current one (or have one made for you) or choose your own. Press `?` on a question for more detail.
 3. **A review** of every change before anything happens, including the ones that ask for your password (installing packages, opening the firewall to your home network, `tailscale serve`).
 4. **A QR code and the passcode.** Scan the code with your phone, tap **Share**, then **Add to Home Screen**, and open the new icon.
 
@@ -242,7 +242,7 @@ Restart the service after changing the config: `systemctl --user restart pc-remo
 
 For advanced setups, `listen = "100.64.0.1:8377"` (or the `PC_REMOTE_ADDR` environment variable) sets the exact address and overrides `access` and `port`.
 
-The passcode is kept separately in `~/.config/pc-remote/passcode`, so you can share your config without sharing the passcode. Run `pc-remote passcode --reset` to get a new passcode.
+The passcode is kept separately in `~/.config/pc-remote/passcode`, so you can share your config without sharing the passcode. Run `pc-remote setup` to choose your own passcode, or `pc-remote passcode --reset` to get a new random one.
 
 ## Themes
 
