@@ -1,0 +1,13 @@
+{
+  "name": "PC Remote",
+  "short_name": "PC Remote",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0E0F0C",
+  "theme_color": "#0E0F0C",
+  "icons": [
+    { "src": "/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

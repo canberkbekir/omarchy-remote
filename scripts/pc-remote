@@ -1,0 +1,18 @@
+#!/bin/bash
+# Runs a command inside the current Hyprland session, e.g. `pc-remote omarchy-system-lock`.
+# The web app runs session commands through it, and it also works from an SSH login.
+
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+# Non-interactive SSH commands skip ~/.bashrc, so OMARCHY_PATH has to be set here.
+source /usr/share/omarchy/default/bash/env-bootstrap
+
+while IFS= read -r line; do
+  case "$line" in
+    HYPRLAND_INSTANCE_SIGNATURE=* | WAYLAND_DISPLAY=* | DISPLAY=* | XDG_CURRENT_DESKTOP=* | QT_QPA_PLATFORM=*)
+      export "$line"
+      ;;
+  esac
+done < <(systemctl --user show-environment)
+
+exec "$@"

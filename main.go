@@ -1,0 +1,526 @@
+// Small web app for controlling an Omarchy PC from a phone.
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"embed"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"log"
+	"math"
+	"math/big"
+	"mime"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	defaultAddr      = "0.0.0.0:8377"
+	sink             = "@DEFAULT_AUDIO_SINK@"
+	passcodeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+	passcodeLength   = 10
+	maxFailures      = 5
+	lockoutDuration  = time.Minute
+	maxBodyBytes     = 1024
+	commandTimeout   = 10 * time.Second
+)
+
+//go:embed web
+var webFiles embed.FS
+
+// Power commands go through the helper so they reach the Hyprland session.
+var powerCommands = map[string][]string{
+	"lock":     {"pc-remote", "omarchy-system-lock"},
+	"reboot":   {"pc-remote", "omarchy-system-reboot"},
+	"shutdown": {"pc-remote", "omarchy-system-shutdown"},
+}
+
+// hostname titles the app, so each install shows its own computer's name.
+var hostname, _ = os.Hostname()
+
+var mediaCommands = map[string][]string{
+	"previous": {"playerctl", "previous"},
+	"toggle":   {"playerctl", "play-pause"},
+	"next":     {"playerctl", "next"},
+}
+
+type status struct {
+	Name       string `json:"name"`
+	Volume     int    `json:"volume"`
+	Muted      bool   `json:"muted"`
+	Media      bool   `json:"media"`
+	Playing    bool   `json:"playing"`
+	Nightlight bool   `json:"nightlight"`
+	NowPlaying *track `json:"nowPlaying"`
+	Output     string `json:"output"`
+}
+
+type monitor struct {
+	Name       string `json:"name"`
+	Label      string `json:"label"`
+	Brightness *int   `json:"brightness"`
+	On         bool   `json:"on"`
+}
+
+type attempt struct {
+	count int
+	last  time.Time
+}
+
+// loginGuard blocks an address for a minute after repeated wrong passcodes.
+type loginGuard struct {
+	mu       sync.Mutex
+	failures map[string]attempt
+}
+
+func (g *loginGuard) blocked(address string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	a := g.failures[address]
+	if a.count < maxFailures {
+		return false
+	}
+	if time.Since(a.last) < lockoutDuration {
+		return true
+	}
+	delete(g.failures, address)
+	return false
+}
+
+func (g *loginGuard) recordFailure(address string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	a := g.failures[address]
+	g.failures[address] = attempt{a.count + 1, time.Now()}
+}
+
+func (g *loginGuard) clear(address string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.failures, address)
+}
+
+type app struct {
+	passcode []byte
+	guard    *loginGuard
+	ddc      sync.Mutex // Monitors handle one DDC/CI request at a time.
+
+	keyboardTimeout    time.Duration
+	openKeyboard       func() (*keyboard, error)
+	keyboardMu         sync.Mutex
+	keyboard           *keyboard
+	endKeyboardSession context.CancelFunc
+}
+
+func loadPasscode() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(home, ".config", "pc-remote", "passcode")
+	data, err := os.ReadFile(path)
+	if err == nil {
+		passcode := strings.TrimSpace(string(data))
+		if passcode == "" {
+			return "", errors.New(path + " is empty")
+		}
+		return passcode, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+
+	chars := make([]byte, passcodeLength)
+	for i := range chars {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(passcodeAlphabet))))
+		if err != nil {
+			return "", err
+		}
+		chars[i] = passcodeAlphabet[n.Int64()]
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if _, err := f.Write(append(chars, '\n')); err != nil {
+		return "", err
+	}
+	return string(chars), nil
+}
+
+func runCommand(argv ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, argv[0], argv[1:]...).Output()
+	return string(output), err
+}
+
+func listMonitors() ([]monitor, error) {
+	output, err := runCommand("pc-remote", "hyprctl", "monitors", "-j")
+	if err != nil {
+		return nil, err
+	}
+	var found []struct {
+		Name       string `json:"name"`
+		Model      string `json:"model"`
+		DpmsStatus bool   `json:"dpmsStatus"`
+	}
+	if err := json.Unmarshal([]byte(output), &found); err != nil {
+		return nil, err
+	}
+	monitors := make([]monitor, len(found))
+	for i, m := range found {
+		monitors[i] = monitor{Name: m.Name, Label: m.Model, On: m.DpmsStatus}
+	}
+	return monitors, nil
+}
+
+func readBrightness(name string) *int {
+	output, err := runCommand("pc-remote", "omarchy-brightness-display", "--monitor", name)
+	if err != nil {
+		return nil
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(output))
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
+func nightlightEnabled() (bool, error) {
+	output, err := runCommand("pc-remote", "omarchy-toggle-nightlight", "--status")
+	if err != nil {
+		return false, err
+	}
+	var state struct {
+		Enabled bool `json:"enabled"`
+	}
+	err = json.Unmarshal([]byte(output), &state)
+	return state.Enabled, err
+}
+
+func readStatus() (status, error) {
+	output, err := runCommand("wpctl", "get-volume", sink)
+	if err != nil {
+		return status{}, err
+	}
+	fields := strings.Fields(output)
+	if len(fields) < 2 {
+		return status{}, errors.New("unexpected wpctl output")
+	}
+	level, err := strconv.ParseFloat(fields[1], 64)
+	if err != nil {
+		return status{}, err
+	}
+	s := status{
+		Name:   hostname,
+		Volume: int(math.Round(level * 100)),
+		Muted:  strings.Contains(output, "[MUTED]"),
+	}
+	if _, err := exec.LookPath("playerctl"); err == nil {
+		s.Media = true
+		s.NowPlaying, _ = readTrack()
+		s.Playing = s.NowPlaying != nil && s.NowPlaying.Playing
+	}
+	if outputs, err := listOutputs(); err == nil {
+		for _, o := range outputs {
+			if o.Active {
+				s.Output = o.Label
+			}
+		}
+	}
+	s.Nightlight, _ = nightlightEnabled()
+	return s, nil
+}
+
+func writeJSON(w http.ResponseWriter, code int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(body)
+}
+
+func writeError(w http.ResponseWriter, code int, message string) {
+	writeJSON(w, code, map[string]string{"error": message})
+}
+
+func writeStatus(w http.ResponseWriter) {
+	s, err := readStatus()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not read status.")
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
+}
+
+func decodeBody(w http.ResponseWriter, r *http.Request, target any) bool {
+	return decodeBodyLimit(w, r, target, maxBodyBytes)
+}
+
+func decodeBodyLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
+		writeError(w, http.StatusBadRequest, "Bad request.")
+		return false
+	}
+	return true
+}
+
+func (a *app) auth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		address := clientAddress(r)
+		if a.guard.blocked(address) {
+			writeError(w, http.StatusTooManyRequests, "Too many attempts. Wait a minute.")
+			return
+		}
+		supplied := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(supplied), a.passcode) != 1 {
+			a.guard.recordFailure(address)
+			writeError(w, http.StatusUnauthorized, "Wrong passcode.")
+			return
+		}
+		a.guard.clear(address)
+		next(w, r)
+	}
+}
+
+func handleStatus(w http.ResponseWriter, r *http.Request) {
+	writeStatus(w)
+}
+
+func handleVolume(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Volume *int `json:"volume"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Volume == nil || *body.Volume < 0 || *body.Volume > 100 {
+		writeError(w, http.StatusBadRequest, "Volume must be 0 to 100.")
+		return
+	}
+	if _, err := runCommand("wpctl", "set-volume", sink, strconv.Itoa(*body.Volume)+"%"); err != nil {
+		writeError(w, http.StatusInternalServerError, "Command failed.")
+		return
+	}
+	if _, err := runCommand("wpctl", "set-mute", sink, "0"); err != nil {
+		writeError(w, http.StatusInternalServerError, "Command failed.")
+		return
+	}
+	writeStatus(w)
+}
+
+func handleMute(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Muted *bool `json:"muted"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Muted == nil {
+		writeError(w, http.StatusBadRequest, "Muted must be true or false.")
+		return
+	}
+	value := "0"
+	if *body.Muted {
+		value = "1"
+	}
+	if _, err := runCommand("wpctl", "set-mute", sink, value); err != nil {
+		writeError(w, http.StatusInternalServerError, "Command failed.")
+		return
+	}
+	writeStatus(w)
+}
+
+func handleMedia(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Action string `json:"action"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	argv, ok := mediaCommands[body.Action]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Unknown action.")
+		return
+	}
+	if _, err := exec.LookPath(argv[0]); err != nil {
+		writeError(w, http.StatusNotImplemented, "playerctl is not installed.")
+		return
+	}
+	if _, err := runCommand(argv...); err != nil {
+		writeError(w, http.StatusInternalServerError, "No media player found.")
+		return
+	}
+	writeStatus(w)
+}
+
+func handleNightlight(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "Enabled must be true or false.")
+		return
+	}
+	current, err := nightlightEnabled()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not read night light.")
+		return
+	}
+	if current != *body.Enabled {
+		// Run without output pipes: the script can leave hyprsunset running in
+		// the background, which would hold them open until the timeout.
+		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		defer cancel()
+		if err := exec.CommandContext(ctx, "pc-remote", "omarchy-toggle-nightlight").Run(); err != nil {
+			writeError(w, http.StatusInternalServerError, "Command failed.")
+			return
+		}
+	}
+	writeStatus(w)
+}
+
+func (a *app) handleBrightnessRead(w http.ResponseWriter, r *http.Request) {
+	a.ddc.Lock()
+	defer a.ddc.Unlock()
+	monitors, err := listMonitors()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not read monitors.")
+		return
+	}
+	for i := range monitors {
+		monitors[i].Brightness = readBrightness(monitors[i].Name)
+	}
+	writeJSON(w, http.StatusOK, monitors)
+}
+
+func (a *app) handleBrightnessSet(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Monitor    string `json:"monitor"`
+		Brightness *int   `json:"brightness"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Brightness == nil || *body.Brightness < 1 || *body.Brightness > 100 {
+		writeError(w, http.StatusBadRequest, "Brightness must be 1 to 100.")
+		return
+	}
+	a.ddc.Lock()
+	defer a.ddc.Unlock()
+	monitors, err := listMonitors()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not read monitors.")
+		return
+	}
+	known := slices.ContainsFunc(monitors, func(m monitor) bool { return m.Name == body.Monitor })
+	if !known {
+		writeError(w, http.StatusBadRequest, "Unknown monitor.")
+		return
+	}
+	target := strconv.Itoa(*body.Brightness) + "%"
+	if _, err := runCommand("pc-remote", "omarchy-brightness-display", "--no-osd", "--monitor", body.Monitor, target); err != nil {
+		writeError(w, http.StatusInternalServerError, "The monitor didn’t respond.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func handlePower(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Action string `json:"action"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	argv, ok := powerCommands[body.Action]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Unknown action.")
+		return
+	}
+	// Don't wait for it: rebooting can end this process mid-request.
+	cmd := exec.Command(argv[0], argv[1:]...)
+	if err := cmd.Start(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Command failed.")
+		return
+	}
+	go cmd.Wait()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func main() {
+	passcode, err := loadPasscode()
+	if err != nil {
+		log.Fatal(err)
+	}
+	site, err := fs.Sub(webFiles, "web")
+	if err != nil {
+		log.Fatal(err)
+	}
+	a := &app{
+		passcode:        []byte(passcode),
+		guard:           &loginGuard{failures: map[string]attempt{}},
+		keyboardTimeout: keyboardTimeout,
+		openKeyboard:    openVirtualKeyboard,
+	}
+
+	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
+		log.Fatal(err)
+	}
+	static := http.FileServerFS(site)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/status", a.auth(handleStatus))
+	mux.HandleFunc("POST /api/volume", a.auth(handleVolume))
+	mux.HandleFunc("POST /api/mute", a.auth(handleMute))
+	mux.HandleFunc("POST /api/media", a.auth(handleMedia))
+	mux.HandleFunc("POST /api/nightlight", a.auth(handleNightlight))
+	mux.HandleFunc("GET /api/brightness", a.auth(a.handleBrightnessRead))
+	mux.HandleFunc("POST /api/brightness", a.auth(a.handleBrightnessSet))
+	mux.HandleFunc("POST /api/power", a.auth(handlePower))
+	mux.HandleFunc("GET /api/keyboard", a.handleKeyboard)
+	mux.HandleFunc("GET /api/art", a.auth(handleArt))
+	mux.HandleFunc("GET /api/outputs", a.auth(handleOutputs))
+	mux.HandleFunc("POST /api/output", a.auth(handleOutput))
+	mux.HandleFunc("POST /api/screens", a.auth(handleScreens))
+	mux.HandleFunc("POST /api/type", a.auth(handleType))
+	mux.HandleFunc("GET /api/clipboard", a.auth(handleClipboardRead))
+	mux.HandleFunc("POST /api/clipboard", a.auth(handleClipboardWrite))
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		static.ServeHTTP(w, r)
+	})
+
+	// PC_REMOTE_ADDR lets an install listen on one interface, such as a Tailscale address.
+	addr := os.Getenv("PC_REMOTE_ADDR")
+	if addr == "" {
+		addr = defaultAddr
+	}
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       time.Minute,
+	}
+	log.Printf("Listening on %s", addr)
+	log.Fatal(server.ListenAndServe())
+}
