@@ -1,31 +1,62 @@
+<div align="center">
+
 # Omarchy Remote
 
-Control your [Omarchy](https://omarchy.org) PC from your phone. Omarchy Remote is a small Go server with a web app that you add to your iPhone (or Android) Home Screen, where it opens like a regular app.
+**Your phone becomes a remote, a trackpad, a keyboard and a game controller for your [Omarchy](https://omarchy.org) PC.**
 
-<p>
-  <img src="docs/display.png" width="260" alt="Display tab with Screens off, Night light and per-monitor brightness">
-  <img src="docs/input.png" width="260" alt="Input tab with the trackpad">
-</p>
+One small Go binary on the PC, one web app on your Home Screen. No app store, no root, no setup in your games.
 
-## Features
+<img src="docs/tour.gif" width="300" alt="A tour of the app: dragging the volume, dimming all monitors, turning on the night light, using the trackpad and opening the Game tab">
 
-- **Control:** volume slider and mute, audio output picker, Now Playing with cover art and media keys, plus Lock, Reboot and Shut Down.
-- **Display:** turn the screens off, toggle the night light, and set the brightness of all monitors or of each one.
-- **Input:** hold the phone upright for a trackpad (tap to click, two-finger scroll, a scroll strip, left and right click) or turn it sideways for a full keyboard. You can also type text into the focused window and send or fetch the clipboard.
-- **Game:** turn the phone sideways for a touch controller that the PC sees as an Xbox 360 controller, so Steam and most games work without setup. You can move, resize and hide every control.
-- **Party:** friends on your Wi-Fi join as players 2 to 4 with a 4-letter code or a QR code, and get a controller and nothing else.
-- **Themes:** follows your Omarchy theme, or use your own CSS. Changes show up on the phone without a restart.
-- **One passcode** that is created on first run, with a one-minute lockout after five wrong tries.
-- **Single binary** with the web app embedded. It needs no root access: keyboard and mouse input go through `/dev/uinput`, which systemd gives to the user signed in at the computer.
+</div>
 
-## Requirements
+<table>
+  <tr>
+    <td align="center"><img src="docs/control.png" width="180" alt="Control tab"><br><sub><b>Control</b></sub></td>
+    <td align="center"><img src="docs/display.png" width="180" alt="Display tab"><br><sub><b>Display</b></sub></td>
+    <td align="center"><img src="docs/input.png" width="180" alt="Input tab"><br><sub><b>Input</b></sub></td>
+    <td align="center"><img src="docs/game.png" width="180" alt="Game tab"><br><sub><b>Game</b></sub></td>
+  </tr>
+</table>
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Get started](#get-started)
+- [A tour of the app](#a-tour-of-the-app)
+  - [Control](#control): volume, audio output, now playing, power
+  - [Display](#display): screens off, night light, brightness
+  - [Input](#input): trackpad, keyboard, typing, clipboard
+  - [Game](#game): a touch Xbox controller you can rearrange
+  - [Party](#party): friends join as players 2 to 4
+- [Security](#security)
+- [Configuration](#configuration)
+- [Themes](#themes)
+- [More](#more): uninstall, the `pc-remote` helper, development
+
+## What it does
+
+| | |
+| --- | --- |
+| 🔊 **Control** | Volume and mute, pick the audio output, Now Playing with cover art and media keys, Lock, Reboot and Shut Down. |
+| 🖥️ **Display** | Turn the screens off, toggle the night light, set the brightness of all monitors at once or of each one. |
+| 🖱️ **Input** | Hold the phone upright for a trackpad, turn it sideways for a full keyboard. Type text into the PC and pass the clipboard both ways. |
+| 🎮 **Game** | Turn sideways for a touch controller the PC sees as an Xbox 360 pad. Move, resize and hide every control. |
+| 🎉 **Party** | Friends on your Wi-Fi scan a QR code and join as players 2 to 4, with a controller and nothing else. |
+| 🎨 **Themes** | Follows your Omarchy theme live, or bring your own CSS. |
+| 🔒 **Access** | One passcode, created on first run, with a one-minute lockout after five wrong tries. Works over Tailscale. |
+| 📦 **One binary** | The web app is embedded. No root: input goes through `/dev/uinput`, which systemd gives to the user at the computer. |
+
+## Get started
+
+**You need**
 
 - Omarchy (Hyprland, PipeWire)
 - Go 1.27 or newer to build it (`mise use -g go@latest` works)
 - `playerctl` for the media controls. Omarchy doesn't include it: `sudo pacman -S playerctl`
 - An iPhone on iOS 16.2 or newer, or a recent Android browser
 
-## Install
+**Install on the PC**
 
 ```bash
 git clone https://github.com/canberkbekir/omarchy-remote.git
@@ -33,15 +64,133 @@ cd omarchy-remote
 ./install.sh
 ```
 
-The script builds the server into `~/.local/bin`, installs the `pc-remote` helper next to it, and starts the `pc-remote-web` systemd user service. It prints your passcode at the end. You can read the passcode again at any time from `~/.config/pc-remote/passcode`.
+The script builds the server into `~/.local/bin`, installs the `pc-remote` helper next to it, and starts the `pc-remote-web` systemd user service. It prints your passcode at the end. You can read it again at any time from `~/.config/pc-remote/passcode`.
 
-Then on your phone:
+**Add it to your phone**
 
-1. Open `http://<your-pc-ip>:8377` in Safari (or `https://` with Tailscale, as described below).
+1. Open `http://<your-pc-ip>:8377` in Safari (or `https://` with [Tailscale](#security)).
 2. Tap **Share**, then **Add to Home Screen**.
 3. Open the new icon and enter the passcode.
 
 If you use a firewall, allow the port from your home network only, for example `sudo ufw allow from 192.168.0.0/24 to any port 8377 proto tcp`.
+
+## A tour of the app
+
+### Control
+
+<table>
+  <tr>
+    <td width="340"><img src="docs/control.gif" width="320" alt="Dragging the volume, muting, skipping a track and switching the output to headphones"></td>
+    <td>
+
+- **Volume:** drag anywhere on the meter, or step it with **−** and **+**. The mute button sits between them.
+- **Audio output:** tap the output row to switch between speakers, headphones, HDMI and any other sound device.
+- **Now Playing:** title, artist, player, cover art and progress for whatever is playing (Spotify, a browser, mpv, …), with previous, play/pause and next.
+- **Power:** **Lock** acts right away. **Reboot** and **Shut Down** ask first.
+
+</td>
+  </tr>
+</table>
+
+### Display
+
+<table>
+  <tr>
+    <td width="340"><img src="docs/display.gif" width="320" alt="Turning on the night light, dimming all monitors, brightening one monitor and turning the screens off and on"></td>
+    <td>
+
+- **Screens off** turns every monitor off without locking. Tap again to bring them back.
+- **Night light** toggles Omarchy's night light.
+- **Brightness** has a slider per monitor, plus **All monitors** when you have more than one. When they differ, the shared slider says *Mixed*.
+- Brightness goes over DDC/CI, so monitors that don't support it (like most TVs) say *Not available*.
+
+</td>
+  </tr>
+</table>
+
+### Input
+
+<table>
+  <tr>
+    <td width="340"><img src="docs/trackpad.gif" width="320" alt="Moving the pointer, tapping to click, two-finger scrolling, using the scroll strip and typing text into the PC"></td>
+    <td>
+
+**Hold the phone upright for a trackpad.**
+
+- Drag to move the pointer. Faster swipes go further.
+- Tap to click, tap with two fingers to right click.
+- Scroll with two fingers, or with the strip on the right.
+- **Left click** and **Right click** stay pressed while you hold them, so you can drag windows and select text.
+
+**Type text** sends a whole sentence (emoji included) to the window that's active on the PC, with or without Enter.
+
+**Clipboard** shows what's copied on the PC so you can copy it to the phone, and sends text the other way.
+
+</td>
+  </tr>
+</table>
+
+<p align="center"><img src="docs/clipboard.png" width="240" alt="The clipboard sheet"></p>
+
+**Turn the phone sideways for a full keyboard.**
+
+<p align="center"><img src="docs/keyboard.gif" width="640" alt="Typing, latching Ctrl and Super, holding Shift and switching to the Fn layer"></p>
+
+- Every key is a real key on a virtual keyboard, so shortcuts work everywhere, including Hyprland's.
+- **Tap a modifier** (Ctrl, Shift, Alt, Super) and it stays down for the next key: tap **Ctrl**, then **c**. Hold it instead to use it like a normal key. The bar at the top shows the combination.
+- **Hold Shift** and the keys show what they'll type.
+- **Fn** swaps in F1 to F12, Home, End, Page Up and Page Down.
+- Several keys can be held at once.
+
+### Game
+
+<table>
+  <tr>
+    <td width="660"><img src="docs/gamepad.gif" width="640" alt="Running in a circle with the left stick while tapping A, B and Y, aiming with the right stick while holding RT, and sliding around the D-pad"></td>
+  </tr>
+</table>
+
+Open the **Game** tab and turn the phone sideways. The first time, the PC gets a virtual Xbox 360 controller named "PC Remote Gamepad". Steam and games that use SDL pick it up as a standard Xbox 360 controller, with no setup.
+
+- **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb.
+- **L3 and R3:** tap a stick, then touch it again and hold. The stick stays clicked while it moves, so you can sprint or melee without letting go. The L3 and R3 buttons work too.
+- **D-pad:** slide between directions. The corners press two at once.
+- **Every finger counts:** move, aim, hold a trigger and press a face button at the same time.
+- **Rotation lock on?** Tap **Open controller**. It opens sideways anyway, with a close button.
+- **Delay** on the Game tab is the measured round trip to the PC. Home Wi-Fi is usually a few milliseconds. Going through Tailscale adds a little.
+
+#### Make the layout yours
+
+<table>
+  <tr>
+    <td width="660"><img src="docs/layout.gif" width="640" alt="Editing the layout: moving the D-pad, making A bigger, hiding L3 and R3, and saving"></td>
+  </tr>
+</table>
+
+Tap the pencil on the controller. **Drag** controls to move them, **tap** one to resize it with the slider or **Hide** it, and tap **Done** to save. **Reset** brings back the default layout.
+
+Layouts are stored on the PC in `~/.config/pc-remote/gamepad.json` as shares of the screen, so a layout works on any phone and survives reinstalling the Home Screen app.
+
+Your app is player 1. If another phone signs in to the app and opens the Game tab, it takes over player 1. Friends join as other players through a [party](#party). iPhones can't vibrate from a web app, so there's no rumble or button feedback on iPhone. Android vibrates briefly on each press.
+
+### Party
+
+<table>
+  <tr>
+    <td width="340" align="center"><img src="docs/party.gif" width="320" alt="Starting a party: the code appears, two friends join and the QR code opens"><br><sub>On your phone</sub></td>
+    <td width="340" align="center"><img src="docs/join.gif" width="320" alt="A friend types the code and their name and becomes player 2"><br><sub>On your friend's phone</sub></td>
+  </tr>
+</table>
+
+On the Game tab, tap **Invite players**. You get a 4-letter code (no numbers, and no I or O, which are easy to mishear), the link, **Copy**, **Share** and a full-screen **QR code**. Friends on your Wi-Fi scan the QR code, or open the link and type the code, then enter their name. Each friend gets their own Xbox controller on the PC.
+
+- **Guests only get a controller.** They join on a separate port (8378), which serves only the join page and the guest controller, accepts only home-network addresses, and is open only while a party runs. Your passcode never leaves your phone.
+- **The player list** shows each player and their delay, with a **Remove** button. **New code** changes the code without kicking anyone. **End party** disconnects everyone, unplugs their controllers and closes the guest port.
+- **Reconnecting** (phone locked, Wi-Fi blip) keeps the same player. The phone remembers its place until the party ends.
+- **Guessing codes** is limited: 5 wrong tries lock a device out for a minute, and 20 wrong tries from all devices together pause joining for a minute.
+- Guests can't edit the layout. They get the default one.
+
+If you use a firewall, allow the guest port from your home network: `sudo ufw allow from 192.168.0.0/24 to any port 8378 proto tcp`. Set `guest_port = 0` in `config.toml` to turn parties off.
 
 ## Security
 
@@ -54,7 +203,7 @@ This app can type on your keyboard and shut down your computer, so treat access 
   sudo tailscale serve --bg 8377
   ```
 
-  Then set `access = "tailscale"` in the config file (below) and restart the service. The app then listens only on this PC, so Tailscale is the only way in. Open `https://<your-pc>.<your-tailnet>.ts.net` on your phone.
+  Then set `access = "tailscale"` in the [config file](#configuration) and restart the service. The app then listens only on this PC, so Tailscale is the only way in. Open `https://<your-pc>.<your-tailnet>.ts.net` on your phone.
 
 - With `access = "lan"`, the app answers only devices with home-network addresses (and Tailscale addresses), even though it listens on every network interface.
 - Starting a party opens the guest port (8378) to your home network until the party ends, even with `access = "tailscale"`. It serves only the join page and the guest controller. Set `guest_port = 0` to turn parties off.
@@ -74,7 +223,7 @@ guest_port = 8378      # where friends join a party; 0 turns parties off
 | `access` | Listens on | Use it when |
 | --- | --- | --- |
 | `lan` | every network interface | you open `http://<your-pc-ip>:8377` on home Wi-Fi |
-| `tailscale` | this PC only (`127.0.0.1`) | you use `tailscale serve`, as described in Security |
+| `tailscale` | this PC only (`127.0.0.1`) | you use `tailscale serve`, as described in [Security](#security) |
 
 Restart the service after changing the config: `systemctl --user restart pc-remote-web`. If a setting is misspelled, the service stops and `journalctl --user -u pc-remote-web` shows which one.
 
@@ -84,7 +233,17 @@ The passcode is kept separately in `~/.config/pc-remote/passcode`, so you can sh
 
 ## Themes
 
-<img src="docs/theme-omarchy.png" width="260" align="right" alt="The app in the Omarchy theme, using Tokyo Night colors">
+<table>
+  <tr>
+    <td align="center"><img src="docs/control.png" width="220" alt="The default theme"><br><sub><code>default</code></sub></td>
+    <td align="center"><img src="docs/theme-omarchy.png" width="220" alt="The Omarchy theme, here with Tokyo Night colors"><br><sub><code>omarchy</code> (with Tokyo Night)</sub></td>
+  </tr>
+</table>
+
+Built-in themes:
+
+- `default`: dark with a lime accent.
+- `omarchy`: follows your current Omarchy theme. Change the theme on the PC and the phone follows within a few seconds.
 
 The app loads three stylesheets in order, and each one can override the one before:
 
@@ -92,18 +251,12 @@ The app loads three stylesheets in order, and each one can override the one befo
 2. **The theme** chosen with `theme = "..."`: colors and fonts.
 3. **`~/.config/pc-remote/user.css`**: anything you like, up to a full restyle.
 
-Built-in themes:
-
-- `default`: dark with a lime accent.
-- `omarchy`: follows your current Omarchy theme. Change the theme on the PC and the phone follows within a few seconds.
-
 **To make your own theme**, copy [`themes/default.css`](themes/default.css) to `~/.config/pc-remote/themes/<name>.css`, change the colors, and set `theme = "<name>"`. A file in that folder with the same name as a built-in theme replaces it.
 
 Edits to theme files and `user.css` reach an open app within a few seconds, with no restart. Only changing `theme` in `config.toml` needs a restart.
 
-<br clear="right">
-
-### Variables
+<details>
+<summary><b>Theme variables</b></summary>
 
 | Variable | Used for |
 | --- | --- |
@@ -121,7 +274,10 @@ A few shades are mixed from these automatically: `--pad`, `--pressed`, `--edge`,
 
 Every color in Omarchy's `colors.toml` is also available as `--omarchy-<name>`, with underscores turned into dashes (for example `--omarchy-bright-blue`), so your own themes can use Omarchy colors too.
 
-### Stable names for `user.css`
+</details>
+
+<details>
+<summary><b>Stable names for <code>user.css</code></b></summary>
 
 These IDs and classes won't be renamed without a note in the release, so `user.css` can rely on them:
 
@@ -138,33 +294,13 @@ These IDs and classes won't be renamed without a note in the release, so `user.c
 
 Anything else in the page may change between versions.
 
-## Gamepad
+</details>
 
-Open the **Game** tab and turn the phone sideways. The first time, the PC gets a virtual Xbox 360 controller named "PC Remote Gamepad". Steam and games that use SDL see it as a standard Xbox 360 controller.
+New themes are welcome as pull requests: add `themes/<name>.css` with a screenshot.
 
-- **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb.
-- **L3 and R3:** tap a stick, then touch it again and hold. The stick stays clicked while it moves, so you can sprint or melee without letting go. The L3 and R3 buttons work too.
-- **D-pad:** slide between directions; the corners press two at once.
-- **Rotation lock on?** Tap **Open controller**. It opens sideways anyway, with a close button.
-- **Delay** on the Game tab is the measured round trip to the PC. Home Wi-Fi is usually a few milliseconds; going through Tailscale adds a little.
+## More
 
-To change the layout, tap the pencil button on the controller. Drag controls to move them, tap one to resize or hide it, and tap **Done** to save. Layouts are stored on the PC in `~/.config/pc-remote/gamepad.json`, as shares of the screen, so a layout works on any phone and survives reinstalling the Home Screen app.
-
-Your app is player 1. If another phone signs in to the app and opens the Game tab, it takes over player 1; friends join as other players through a party (below). iPhones can't vibrate from a web app, so there's no rumble or button feedback on iPhone; Android vibrates briefly on each press.
-
-## Party: friends as players 2 to 4
-
-On the Game tab, tap **Invite players**. You get a 4-letter code (no numbers, and no I or O, which are easy to mishear), the link, **Copy**, **Share** and a full-screen **QR code**. Friends on your Wi-Fi scan the QR code, or open the link and type the code, then enter their name. Each friend gets their own Xbox controller on the PC.
-
-- **Guests only get a controller.** They join on a separate port (8378), which serves only the join page and the guest controller, accepts only home-network addresses, and is open only while a party runs. Your passcode never leaves your phone.
-- **The list** on your phone shows each player, their delay, and a **Remove** button. **New code** changes the code without kicking anyone. **End party** disconnects everyone, unplugs their controllers and closes the guest port.
-- **Reconnecting** (phone locked, Wi-Fi blip) keeps the same player; the phone remembers its place until the party ends.
-- **Guessing codes** is limited: 5 wrong tries lock a device out for a minute, and 20 wrong tries from all devices together pause joining for a minute.
-- Guests can't edit the layout; they get the default one.
-
-If you use a firewall, allow the guest port from your home network: `sudo ufw allow from 192.168.0.0/24 to any port 8378 proto tcp`. Set `guest_port = 0` in `config.toml` to turn parties off.
-
-## Uninstall
+### Uninstall
 
 ```bash
 systemctl --user disable --now pc-remote-web
@@ -172,11 +308,11 @@ rm ~/.config/systemd/user/pc-remote-web.service ~/.local/bin/pc-remote-web ~/.lo
 rm -r ~/.config/pc-remote   # your passcode, config, themes and gamepad layout
 ```
 
-## The `pc-remote` helper
+### The `pc-remote` helper
 
 `scripts/pc-remote` runs a command inside your running Hyprland session, for example `pc-remote omarchy-system-lock`. The server uses it for session commands. It also works over SSH, so you can use it from an iPhone Shortcuts **Run Script Over SSH** action as well.
 
-## Development
+### Development
 
 ```bash
 go test ./...
@@ -185,7 +321,7 @@ go build -o pc-remote-web . && ./pc-remote-web
 
 The web app is `web/index.html`, `web/app.js` and `web/base.css`, and the guest page is `web/join.html` with `web/join.js`. They are embedded into the binary at build time, along with the built-in themes in `themes/`. Keep scripts in files: the Content-Security-Policy blocks inline scripts and `style=""` attributes.
 
-New themes are welcome as pull requests: add `themes/<name>.css` with a screenshot.
+The screenshots and clips in `docs/` were recorded from the real web app in a phone-sized browser, with a stand-in PC answering its requests.
 
 ## License
 
