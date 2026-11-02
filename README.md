@@ -52,10 +52,15 @@ One small Go binary on the PC, one web app on your Home Screen. No app store, no
 **You need**
 
 - Omarchy (Hyprland, PipeWire)
-- Go 1.27 or newer to build it (`mise use -g go@latest` works)
 - An iPhone on iOS 16.2 or newer, or a recent Android browser
 
 **Install on the PC**
+
+```bash
+curl -fsSL https://github.com/canberkbekir/omarchy-remote/releases/latest/download/install.sh | bash
+```
+
+This downloads the latest release (checked against its checksums), installs it into `~/.local/bin` with no root needed, and starts setup. To build from source instead, with Go 1.27 or newer (`mise use -g go@latest` works):
 
 ```bash
 git clone https://github.com/canberkbekir/omarchy-remote.git
@@ -63,7 +68,7 @@ cd omarchy-remote
 ./install.sh
 ```
 
-The script builds the server into `~/.local/bin`, installs the `pc-remote` helper next to it, and starts setup:
+Run the same command again to update. Either way, setup walks you through the rest:
 
 1. **A check of the PC.** Anything missing (like `playerctl` for the media controls) is named by the feature it affects, and setup offers to install it.
 2. **A few questions:** how your phone connects (same Wi-Fi or Tailscale), the name shown in the app, its colors, and whether friends can join games. Press `?` on a question for more detail.
