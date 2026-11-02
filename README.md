@@ -53,7 +53,6 @@ One small Go binary on the PC, one web app on your Home Screen. No app store, no
 
 - Omarchy (Hyprland, PipeWire)
 - Go 1.27 or newer to build it (`mise use -g go@latest` works)
-- `playerctl` for the media controls. Omarchy doesn't include it: `sudo pacman -S playerctl`
 - An iPhone on iOS 16.2 or newer, or a recent Android browser
 
 **Install on the PC**
@@ -64,15 +63,23 @@ cd omarchy-remote
 ./install.sh
 ```
 
-The script builds the server into `~/.local/bin`, installs the `pc-remote` helper next to it, and starts the `pc-remote-web` systemd user service. It prints your passcode at the end. You can read it again at any time from `~/.config/pc-remote/passcode`.
+The script builds the server into `~/.local/bin`, installs the `pc-remote` helper next to it, and starts setup:
 
-**Add it to your phone**
+1. **A check of the PC.** Anything missing (like `playerctl` for the media controls) is named by the feature it affects, and setup offers to install it.
+2. **A few questions:** how your phone connects (same Wi-Fi or Tailscale), the name shown in the app, its colors, and whether friends can join games. Press `?` on a question for more detail.
+3. **A review** of every change before anything happens, including the ones that ask for your password (installing packages, opening the firewall to your home network, `tailscale serve`).
+4. **A QR code and the passcode.** Scan the code with your phone, tap **Share**, then **Add to Home Screen**, and open the new icon.
 
-1. Open `http://<your-pc-ip>:8377` in Safari (or `https://` with [Tailscale](#security)).
-2. Tap **Share**, then **Add to Home Screen**.
-3. Open the new icon and enter the passcode.
+Run `pc-remote setup` again at any time to change your answers. It starts from your current settings.
 
-If you use a firewall, allow the port from your home network only, for example `sudo ufw allow from 192.168.0.0/24 to any port 8377 proto tcp`.
+**Commands**
+
+| | |
+| --- | --- |
+| `pc-remote setup` | set up, or change settings. `--yes` keeps the current settings without asking; `--help` lists the rest |
+| `pc-remote doctor` | check every part (tools, service, firewall, Tailscale) and say how to fix what's wrong |
+| `pc-remote passcode` | show the passcode. `--reset` makes a new one, and phones sign in again |
+| `pc-remote version` | show the version |
 
 ## A tour of the app
 
@@ -203,19 +210,19 @@ This app can type on your keyboard and shut down your computer, so treat access 
   sudo tailscale serve --bg 8377
   ```
 
-  Then set `access = "tailscale"` in the [config file](#configuration) and restart the service. The app then listens only on this PC, so Tailscale is the only way in. Open `https://<your-pc>.<your-tailnet>.ts.net` on your phone.
+  Then set `access = "tailscale"` in the [config file](#configuration) and restart the service. The app then listens only on this PC, so Tailscale is the only way in. Open `https://<your-pc>.<your-tailnet>.ts.net` on your phone. To keep the home-network address working too, use `access = "both"`. `pc-remote setup` does all of this for you.
 
 - With `access = "lan"`, the app answers only devices with home-network addresses (and Tailscale addresses), even though it listens on every network interface.
 - Starting a party opens the guest port (8378) to your home network until the party ends, even with `access = "tailscale"`. It serves only the join page and the guest controller. Set `guest_port = 0` to turn parties off.
 
 ## Configuration
 
-Settings live in `~/.config/pc-remote/config.toml`. Every setting is optional, and without the file the app uses the defaults below.
+`pc-remote setup` writes the settings for you. They live in `~/.config/pc-remote/config.toml`, and you can also edit that file by hand. Every setting is optional, and without the file the app uses the defaults below.
 
 ```toml
 name   = "Studio PC"   # title at the top of the app (default: the computer's name)
 theme  = "omarchy"     # see Themes below (default: "default")
-access = "tailscale"   # "lan" or "tailscale" (default: "lan")
+access = "tailscale"   # "lan", "tailscale" or "both" (default: "lan")
 port   = 8377
 guest_port = 8378      # where friends join a party; 0 turns parties off
 ```
@@ -224,12 +231,13 @@ guest_port = 8378      # where friends join a party; 0 turns parties off
 | --- | --- | --- |
 | `lan` | every network interface | you open `http://<your-pc-ip>:8377` on home Wi-Fi |
 | `tailscale` | this PC only (`127.0.0.1`) | you use `tailscale serve`, as described in [Security](#security) |
+| `both` | every network interface | you want both: home Wi-Fi for any phone, and `tailscale serve` for your own phone anywhere |
 
 Restart the service after changing the config: `systemctl --user restart pc-remote-web`. If a setting is misspelled, the service stops and `journalctl --user -u pc-remote-web` shows which one.
 
 For advanced setups, `listen = "100.64.0.1:8377"` (or the `PC_REMOTE_ADDR` environment variable) sets the exact address and overrides `access` and `port`.
 
-The passcode is kept separately in `~/.config/pc-remote/passcode`, so you can share your config without sharing the passcode. Delete that file and restart the service to get a new passcode.
+The passcode is kept separately in `~/.config/pc-remote/passcode`, so you can share your config without sharing the passcode. Run `pc-remote passcode --reset` to get a new passcode.
 
 ## Themes
 

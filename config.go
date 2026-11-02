@@ -66,8 +66,8 @@ func loadConfig(dir string) (config, error) {
 	if !themeNamePattern.MatchString(c.Theme) {
 		return c, fmt.Errorf("%s: theme %q may only use letters, digits, - and _", path, c.Theme)
 	}
-	if c.Access != "lan" && c.Access != "tailscale" {
-		return c, fmt.Errorf("%s: access must be \"lan\" or \"tailscale\", not %q", path, c.Access)
+	if !validAccess(c.Access) {
+		return c, fmt.Errorf("%s: access must be \"lan\", \"tailscale\" or \"both\", not %q", path, c.Access)
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return c, fmt.Errorf("%s: port must be 1 to 65535", path)
@@ -77,6 +77,15 @@ func loadConfig(dir string) (config, error) {
 	}
 	return c, nil
 }
+
+func validAccess(access string) bool {
+	return access == "lan" || access == "tailscale" || access == "both"
+}
+
+// viaLAN and viaTailscale report the ways in that an access setting opens.
+// "both" listens on the home network and also sits behind `tailscale serve`.
+func viaLAN(access string) bool       { return access != "tailscale" }
+func viaTailscale(access string) bool { return access != "lan" }
 
 // listenAddr picks the address in order: PC_REMOTE_ADDR, listen, then the access preset.
 // With "tailscale", only `tailscale serve` on this PC can reach the server.

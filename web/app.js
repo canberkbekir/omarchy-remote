@@ -1139,7 +1139,7 @@ $('sheet-go').addEventListener('click', () => {
 
 $('login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  passcode = $('passcode').value.trim();
+  passcode = $('passcode').value.replace(/\s+/g, ''); // shown in groups of four
   try {
     const status = await api('/api/status');
     savePasscode(passcode);

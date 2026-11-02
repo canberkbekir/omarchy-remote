@@ -145,7 +145,7 @@ type app struct {
 	themes     *themes
 	passcode   []byte
 	guard      *loginGuard
-	trustProxy bool       // listening on loopback, behind `tailscale serve`
+	trustProxy bool       // behind `tailscale serve`, so loopback connections are the proxy
 	ddc        sync.Mutex // Monitors handle one DDC/CI request at a time.
 
 	keyboardTimeout    time.Duration
@@ -532,6 +532,9 @@ func handlePower(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	if code, handled := runCommandLine(os.Args[1:], os.Stdout); handled {
+		os.Exit(code)
+	}
 	dir, err := configDir()
 	if err != nil {
 		log.Fatal(err)
@@ -560,7 +563,7 @@ func main() {
 		themes:          look,
 		passcode:        []byte(passcode),
 		guard:           &loginGuard{failures: map[string]attempt{}},
-		trustProxy:      loopback,
+		trustProxy:      loopback || settings.Listen == "" && viaTailscale(settings.Access),
 		keyboardTimeout: keyboardTimeout,
 		openKeyboard:    openVirtualKeyboard,
 		gamepadTimeout:  gamepadTimeout,
