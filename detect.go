@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -38,16 +39,17 @@ type check struct {
 
 // system is what setup knows about this PC before asking anything.
 type system struct {
-	Dir      string // ~/.config/pc-remote
-	Hostname string
-	Checks   []check
+	Dir         string // ~/.config/pc-remote
+	DefaultName string // what to call the PC when no name is given
+	Checks      []check
 
-	Existing     config // the current settings, or the defaults
-	HasPasscode  bool
-	HasConfig    bool
-	KeepPort     bool // port and listen were set by hand; keep them
-	KeepListen   bool
-	CustomThemes []string
+	Existing      config // the current settings, or the defaults
+	ConfigProblem string // why config.toml didn't load; setup keeps a copy before replacing it
+	HasPasscode   bool
+	HasConfig     bool
+	KeepPort      bool // port and listen were set by hand; keep them
+	KeepListen    bool
+	CustomThemes  []string
 
 	OmarchyTheme string // display name of the current Omarchy theme
 
@@ -106,7 +108,7 @@ func (s system) guestPort() int {
 
 func detectSystem(dir string) system {
 	s := system{Dir: dir}
-	s.Hostname, _ = os.Hostname()
+	s.DefaultName = defaultPCName()
 	s.Executable, _ = os.Executable()
 
 	s.Checks = append(s.Checks, checkUinput())
@@ -129,7 +131,12 @@ func detectSystem(dir string) system {
 		s.Checks = append(s.Checks, c)
 	}
 
-	s.Existing, s.HasConfig, s.KeepPort, s.KeepListen = readExisting(dir)
+	var problem error
+	s.Existing, s.HasConfig, s.KeepPort, s.KeepListen, problem = readExisting(dir)
+	if problem != nil {
+		// The messages start with the file's path, which the warning already names.
+		s.ConfigProblem = strings.TrimPrefix(problem.Error(), filepath.Join(dir, "config.toml")+": ")
+	}
 	s.CustomThemes = customThemes(dir)
 	if info, err := os.Stat(filepath.Join(dir, "passcode")); err == nil && info.Size() > 0 {
 		s.HasPasscode = true
@@ -183,20 +190,21 @@ func checkUinput() check {
 
 // readExisting loads the current settings, falling back to the defaults if
 // they don't load, and notes which advanced settings were set by hand.
-func readExisting(dir string) (c config, found, port, listen bool) {
-	c, err := loadConfig(dir)
-	if err != nil {
+// problem says why they didn't load.
+func readExisting(dir string) (c config, found, port, listen bool, problem error) {
+	c, problem = loadConfig(dir)
+	if problem != nil {
 		c, _ = loadConfig(filepath.Join(dir, "missing"))
 	}
 	var raw map[string]any
 	meta, err := toml.DecodeFile(filepath.Join(dir, "config.toml"), &raw)
 	if errors.Is(err, os.ErrNotExist) {
-		return c, false, false, false
+		return c, false, false, false, nil
 	}
 	if err != nil {
-		return c, true, false, false
+		return c, true, false, false, problem
 	}
-	return c, true, meta.IsDefined("port"), meta.IsDefined("listen")
+	return c, true, meta.IsDefined("port"), meta.IsDefined("listen"), problem
 }
 
 func customThemes(dir string) []string {
@@ -226,6 +234,41 @@ func omarchyThemeName() string {
 		return ""
 	}
 	return titleCase(strings.ReplaceAll(strings.TrimSpace(string(data)), "-", " "))
+}
+
+// defaultPCName names the PC the way phones and Macs do, like "Canberk's
+// Desktop", since a hostname is often something like archlinux.
+func defaultPCName() string {
+	data, _ := os.ReadFile("/sys/class/dmi/id/chassis_type")
+	name := chassisName(strings.TrimSpace(string(data)))
+	if owner := ownerName(); owner != "" {
+		name = owner + "'s " + name
+	}
+	return name
+}
+
+// chassisName reads an SMBIOS chassis type.
+func chassisName(code string) string {
+	switch code {
+	case "8", "9", "10", "14", "31", "32":
+		return "Laptop"
+	case "3", "4", "5", "6", "7", "15", "16", "24", "35", "36":
+		return "Desktop"
+	}
+	return "PC"
+}
+
+// ownerName is the first name of the person logged in, or their username.
+func ownerName() string {
+	u, err := user.Current()
+	if err != nil || u.Username == "root" {
+		return ""
+	}
+	full, _, _ := strings.Cut(u.Name, ",")
+	if words := strings.Fields(full); len(words) > 0 {
+		return titleCase(words[0])
+	}
+	return titleCase(u.Username)
 }
 
 func titleCase(s string) string {

@@ -35,6 +35,7 @@ Usage:
   pc-remote doctor             check that everything works
   pc-remote passcode           show the passcode
   pc-remote passcode --reset   make a new passcode; phones sign in again
+  pc-remote update             install the latest release
   pc-remote version            show the version
   pc-remote <command>          run a command in the Hyprland session
 
@@ -54,6 +55,8 @@ func runCommandLine(args []string, out io.Writer) (int, bool) {
 		return runDoctor(out), true
 	case "passcode":
 		return runPasscode(args[1:], out), true
+	case "update":
+		return runUpdate(args[1:], out), true
 	case "version", "--version", "-v":
 		fmt.Fprintln(out, "Omarchy Remote", versionString())
 		return 0, true
@@ -128,6 +131,12 @@ func runDoctor(out io.Writer) int {
 	}
 	_, helper := lookPath("pc-remote")
 	line(helper, "Session helper", ok(helper, "pc-remote is installed", "pc-remote is missing: run ./install.sh again"))
+	current := versionString()
+	if latest, err := latestVersion(3 * time.Second); err == nil && newerVersion(latest, current) {
+		fmt.Fprintf(out, "  %s  %-32s %s\n", st.accent.Render("↑"), "Version", current+" · "+latest+" is out: "+st.code.Render("pc-remote update"))
+	} else {
+		fmt.Fprintf(out, "  %s  %-32s %s\n", st.good.Render("✓"), "Version", st.dim.Render(current))
+	}
 
 	fmt.Fprintln(out, "\n  "+st.title.Render("Omarchy Remote"))
 	settings, err := loadConfig(dir)

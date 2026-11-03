@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -78,7 +79,7 @@ type wizard struct {
 func newWizard(s system, a answers) wizard {
 	name := textinput.New()
 	name.SetValue(a.Name)
-	name.Placeholder = s.Hostname
+	name.Placeholder = s.DefaultName
 	name.CharLimit = 40
 	name.Prompt = "› "
 	w := wizard{s: s, answers: a, name: name, width: 80, st: newStyles(os.Stdout)}
@@ -210,7 +211,7 @@ func (w wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if w.stage == stageName {
 			if msg.String() == "enter" {
-				w.answers.Name = cleanPCName(w.name.Value(), w.s.Hostname)
+				w.answers.Name = cleanPCName(w.name.Value(), w.s.DefaultName)
 				w.name.SetValue(w.answers.Name)
 				return w, w.next()
 			}
@@ -561,6 +562,11 @@ func (w wizard) welcome(width int) string {
 		}
 		fmt.Fprintf(&b, "    %s  %-32s %s\n", mark, c.Label, detail)
 	}
+	if w.s.ConfigProblem != "" {
+		note := "Your settings in " + tildePath(filepath.Join(w.s.Dir, "config.toml")) + " have a mistake: " + w.s.ConfigProblem +
+			"\nSetup starts from the defaults and keeps a copy of the old file. To fix it by hand instead, press ctrl+c."
+		b.WriteString("\n" + indent(st.bad.Render(st.r.NewStyle().Width(width).Render(note)), 2) + "\n")
+	}
 	b.WriteString("\n")
 	return b.String()
 }
@@ -622,6 +628,9 @@ func (w wizard) review(width int) string {
 	for _, r := range rows {
 		fmt.Fprintf(&b, "    %s %s\n", st.dim.Render(fmt.Sprintf("%-9s", r[0])), r[1])
 	}
+	if note := plainHTTPNote(a.Access); note != "" {
+		b.WriteString("\n" + indent(st.dim.Render(st.r.NewStyle().Width(width-4).Render(note)), 4) + "\n")
+	}
 	b.WriteString("\n" + indent(st.title.Render("What happens next"), 2) + "\n")
 	for i, act := range plan(s, a) {
 		label := act.Label
@@ -633,6 +642,18 @@ func (w wizard) review(width int) string {
 	}
 	b.WriteString("\n")
 	return b.String()
+}
+
+// plainHTTPNote says what the home address doesn't protect, so it's a choice
+// made knowingly.
+func plainHTTPNote(access string) string {
+	switch access {
+	case "lan":
+		return "Heads up: on home Wi-Fi the connection isn't encrypted, so someone else on your network could see the passcode. Tailscale encrypts it."
+	case "both":
+		return "Heads up: the home address isn't encrypted, so someone else on your network could see the passcode. The Tailscale address is encrypted."
+	}
+	return ""
 }
 
 func (w wizard) renderChoice(c choice, selected bool, width int) string {

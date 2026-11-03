@@ -88,6 +88,12 @@ func plan(s system, a answers) []action {
 		})
 	}
 	path := filepath.Join(s.Dir, "config.toml")
+	if s.ConfigProblem != "" {
+		actions = append(actions, action{
+			Label: "Keep a copy of your old settings, which have a mistake, as " + tildePath(path+".bak"),
+			Run:   func() error { return os.Rename(path, path+".bak") },
+		})
+	}
 	actions = append(actions, action{
 		Label: "Save settings to " + tildePath(path),
 		Run:   func() error { return saveConfig(path, renderConfig(s, a)) },
@@ -154,12 +160,12 @@ func tomlString(s string) string {
 	}, s))
 }
 
-// cleanPCName trims the typed name, falling back to the computer's name.
-func cleanPCName(name, hostname string) string {
+// cleanPCName trims the typed name, falling back to the default name.
+func cleanPCName(name, fallback string) string {
 	name = strings.Join(strings.FieldsFunc(name, unicode.IsControl), "")
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return hostname
+		return fallback
 	}
 	if r := []rune(name); len(r) > 40 {
 		name = string(r[:40])
@@ -348,6 +354,13 @@ func runSetup(args []string, stdout io.Writer) int {
 		return 2
 	}
 
+	if *yes && s.ConfigProblem != "" {
+		fmt.Fprintln(stdout, "Your settings in "+tildePath(filepath.Join(dir, "config.toml"))+" have a mistake, so setup didn't touch them:")
+		fmt.Fprintln(stdout, "  "+s.ConfigProblem)
+		fmt.Fprintln(stdout, "Fix it, or run `pc-remote setup` without --yes to start over; it keeps a copy of the old file.")
+		return 1
+	}
+
 	interactive := term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd())
 	switch {
 	case *yes:
@@ -370,7 +383,7 @@ func runSetup(args []string, stdout io.Writer) int {
 		}
 		a = w.answers
 	}
-	a.Name = cleanPCName(a.Name, s.Hostname)
+	a.Name = cleanPCName(a.Name, s.DefaultName)
 	if *yes && viaTailscale(a.Access) && !s.TailscaleServing {
 		fmt.Fprintf(stdout, "Note: run `sudo tailscale serve --bg %d` to reach the app through Tailscale.\n", s.port())
 	}

@@ -58,10 +58,7 @@ func loadConfig(dir string) (config, error) {
 	}
 
 	if c.Name == "" {
-		c.Name, _ = os.Hostname()
-	}
-	if c.Name == "" {
-		c.Name = "PC Remote"
+		c.Name = defaultPCName()
 	}
 	if !themeNamePattern.MatchString(c.Theme) {
 		return c, fmt.Errorf("%s: theme %q may only use letters, digits, - and _", path, c.Theme)

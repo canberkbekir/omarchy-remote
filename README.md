@@ -68,7 +68,7 @@ cd omarchy-remote
 ./install.sh
 ```
 
-Run the same command again to update. Either way, setup walks you through the rest:
+To update later, run `pc-remote update` (or `git pull && ./install.sh` in your clone). Either way, setup walks you through the rest:
 
 1. **A check of the PC.** Anything missing (like `playerctl` for the media controls) is named by the feature it affects, and setup offers to install it.
 2. **A few questions:** how your phone connects (same Wi-Fi, Tailscale or both), the name shown in the app, its colors, whether friends can join games, and the passcode: keep the current one (or have one made for you) or choose your own. Press `?` on a question for more detail.
@@ -84,6 +84,7 @@ Run `pc-remote setup` again at any time to change your answers. It starts from y
 | `pc-remote setup` | set up, or change settings. `--yes` keeps the current settings without asking; `--help` lists the rest |
 | `pc-remote doctor` | check every part (tools, service, firewall, Tailscale) and say how to fix what's wrong |
 | `pc-remote passcode` | show the passcode. `--reset` makes a new one, and phones sign in again |
+| `pc-remote update` | install the latest release and restart the service. `--check` only says whether there is one |
 | `pc-remote version` | show the version |
 
 ## A tour of the app

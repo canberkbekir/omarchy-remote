@@ -18,7 +18,7 @@ func testSystem(t *testing.T) system {
 	c, _ := loadConfig(dir)
 	c.Name = "archbox"
 	return system{
-		Dir: dir, Hostname: "archbox", Existing: c,
+		Dir: dir, DefaultName: "archbox", Existing: c,
 		LANAddress: "192.168.1.42", LANSubnet: "192.168.1.0/24",
 		FirewallOpen: map[int]bool{}, ServiceUnit: true, Executable: "/usr/bin/pc-remote-web",
 	}
@@ -356,5 +356,65 @@ func TestSavePasscode(t *testing.T) {
 	}
 	if savePasscode(dir, "a b c d e") == nil {
 		t.Error("saved a passcode with spaces")
+	}
+}
+
+func TestBrokenConfigIsKept(t *testing.T) {
+	dir := writeConfig(t, "name = \"Den\"\ntheme = \n")
+	_, found, _, _, problem := readExisting(dir)
+	if !found || problem == nil {
+		t.Fatalf("found = %v, problem = %v; want a problem", found, problem)
+	}
+
+	s := testSystem(t)
+	s.Dir, s.ConfigProblem = dir, problem.Error()
+	actions := plan(s, defaultAnswers(s))
+	i := slices.IndexFunc(actions, func(a action) bool { return strings.HasPrefix(a.Label, "Keep a copy") })
+	if i < 0 || !strings.HasPrefix(actions[i+1].Label, "Save settings") {
+		t.Fatalf("no copy before saving: %v", labels(actions))
+	}
+	for _, act := range actions[i : i+2] {
+		if err := act.Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if old, _ := os.ReadFile(filepath.Join(dir, "config.toml.bak")); !strings.Contains(string(old), "Den") {
+		t.Errorf("the copy holds %q", old)
+	}
+	if _, err := loadConfig(dir); err != nil {
+		t.Errorf("new settings don't load: %v", err)
+	}
+}
+
+func TestSetupYesLeavesBrokenConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	path := filepath.Join(home, "pc-remote", "config.toml")
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	os.WriteFile(path, []byte("theme = \n"), 0o600)
+
+	var out strings.Builder
+	if code := runSetup([]string{"--yes"}, &out); code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "theme = \n" {
+		t.Errorf("settings changed to %q", data)
+	}
+	if !strings.Contains(out.String(), "mistake") {
+		t.Errorf("output doesn't explain: %q", out.String())
+	}
+}
+
+func TestChassisName(t *testing.T) {
+	for code, want := range map[string]string{"3": "Desktop", "10": "Laptop", "31": "Laptop", "1": "PC", "": "PC"} {
+		if got := chassisName(code); got != want {
+			t.Errorf("chassisName(%q) = %q, want %q", code, got, want)
+		}
+	}
+}
+
+func TestPlainHTTPNote(t *testing.T) {
+	if plainHTTPNote("lan") == "" || plainHTTPNote("both") == "" || plainHTTPNote("tailscale") != "" {
+		t.Error("the note should show exactly when the home address is used")
 	}
 }
