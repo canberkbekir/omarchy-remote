@@ -793,9 +793,9 @@ const pad = setupGamepad({
   canEdit: true,
   loadLayout: () => api('/api/gamepad/layout'),
   saveLayout: (layout) => api('/api/gamepad/layout', layout),
-  onStatus: ({ ready, connecting, delay }) => {
+  onStatus: ({ ready, connecting, delay, peak }) => {
     $('game-player').textContent = ready ? 'Player 1' : (connecting ? 'Connecting' : 'Offline');
-    $('game-delay').textContent = ready && delay !== null ? `${delay} ms` : '–';
+    $('game-delay').textContent = ready && delay !== null ? `${delay} ms · peak ${peak}` : '–';
     myDelay = ready ? delay : null;
   },
   onError: (error) => { if (error.status === 401) handleError(error); },

@@ -41,14 +41,21 @@ function setupGamepad(options) {
 `);
 
   // The phone sends the whole controller state ("g buttons lx ly rx ry lt rt") on
-  // every change and four times a second, so a lost message is fixed by the next.
+  // every change, every 20 ms while a control is held and four times a second
+  // otherwise, so a lost message is fixed by the next. The steady stream while
+  // playing also lets TCP notice a lost packet and resend it at once, instead of
+  // waiting out a timeout while every later input queues behind it.
   // Layouts are drawn on an 844×390 reference screen and stored as shares of the
   // screen, so they fit any phone; sizes scale with the screen.
   const PAD_W = 844;
   const PAD_H = 390;
   const PAD_SNAP = 8;
+  const PAD_HELD_MS = 20;
   const PAD_RESEND_MS = 250;
-  const PAD_DELAY_MS = 2000;
+  // Delay is measured twice a second; the peak over the last 15 seconds shows
+  // the stalls an average hides.
+  const PAD_DELAY_MS = 500;
+  const PAD_PEAK_SAMPLES = 30;
   const STICK_MAX = 32767;
   // A quick tap and then a touch that stays down on a stick clicks it (L3, R3).
   const TAP_MS = 200;
@@ -102,7 +109,8 @@ function setupGamepad(options) {
   let padResend = null;
   let padPing = null;
   let padDelay = null;
-  let padFrame = 0;
+  let padSamples = [];
+  let padSent = 0;
   let padFlash = '';
   let padFlashTimer = null;
   const padPointers = new Map();
@@ -162,13 +170,18 @@ function setupGamepad(options) {
     return `g ${bits} ${axis('ls', 'dx')} ${axis('ls', 'dy')} ${axis('rs', 'dx')} ${axis('rs', 'dy')} ${trigger('lt')} ${trigger('rt')}`;
   }
 
+  // Every change goes out at once; the browser already delivers moves no faster
+  // than the screen draws.
   function sendPad() {
-    if (padReady) padSocket.send(padMessage());
+    if (!padReady) return;
+    padSocket.send(padMessage());
+    padSent = performance.now();
   }
 
-  // Moves are sent once per frame; presses and releases go out at once.
-  function schedulePad() {
-    if (!padFrame) padFrame = requestAnimationFrame(() => { padFrame = 0; sendPad(); });
+  // Runs every PAD_HELD_MS and resends if nothing went out for a while.
+  function resendPad() {
+    const wait = padPointers.size ? PAD_HELD_MS : PAD_RESEND_MS;
+    if (performance.now() - padSent >= wait - 5) sendPad();
   }
 
   // Eight directions from where the finger is on the pad; the middle is neutral.
@@ -188,7 +201,7 @@ function setupGamepad(options) {
     delete padSticks.rs;
     padDpad = { pointer: null, dirs: {} };
     PAD_CONTROLS.forEach(drawControl);
-    schedulePad();
+    sendPad();
   }
 
   function buildPad() {
@@ -266,6 +279,8 @@ function setupGamepad(options) {
       if (!stick || stick.pointer !== event.pointerId) return;
       const at = toPad(event);
       stick.far = Math.max(stick.far, Math.hypot(at.x - stick.start.x, at.y - stick.start.y));
+      // Past the edge the stick's center follows the thumb, so turning back
+      // moves the stick at once instead of after the thumb returns to the ring.
       const p = toControl(control, event);
       let dx = p.x - stick.ox;
       let dy = p.y - stick.oy;
@@ -274,6 +289,8 @@ function setupGamepad(options) {
       if (distance > travel) {
         dx = (dx * travel) / distance;
         dy = (dy * travel) / distance;
+        stick.ox = Math.min(Math.max(p.x - dx, 0), control.w);
+        stick.oy = Math.min(Math.max(p.y - dy, 0), control.h);
       }
       stick.dx = dx;
       stick.dy = dy;
@@ -288,7 +305,7 @@ function setupGamepad(options) {
       return;
     }
     drawControl(control);
-    schedulePad();
+    sendPad();
   }
 
   function padUp(control, event) {
@@ -365,11 +382,12 @@ function setupGamepad(options) {
   }
 
   function drawPadStatus() {
-    const delay = padDelay === null ? '' : ` · ${Math.round(padDelay)} ms`;
+    const peak = padSamples.length ? Math.round(Math.max(...padSamples)) : null;
+    const delay = padDelay === null ? '' : ` · ${Math.round(padDelay)} ms, peak ${peak}`;
     const live = padReady ? `Player ${options.player()}${delay}` : (padSocket ? 'Connecting' : 'Offline');
     $('gp-state').textContent = padFlash || live;
     $('gp-dot').classList.toggle('off', !padReady);
-    options.onStatus?.({ ready: padReady, connecting: !!padSocket, delay: padDelay === null ? null : Math.round(padDelay) });
+    options.onStatus?.({ ready: padReady, connecting: !!padSocket, delay: padDelay === null ? null : Math.round(padDelay), peak });
   }
 
   function flashPad(text) {
@@ -479,7 +497,7 @@ function setupGamepad(options) {
     socket.onmessage = (event) => {
       if (event.data === 'ok') {
         padReady = true;
-        padResend = setInterval(sendPad, PAD_RESEND_MS);
+        padResend = setInterval(resendPad, PAD_HELD_MS);
         padPing = setInterval(() => socket.send(`t ${performance.now()}`), PAD_DELAY_MS);
         socket.send(`t ${performance.now()}`);
         sendPad();
@@ -488,6 +506,7 @@ function setupGamepad(options) {
       } else if (event.data.startsWith('t ')) {
         const ms = performance.now() - Number(event.data.slice(2));
         padDelay = padDelay === null ? ms : padDelay * 0.7 + ms * 0.3;
+        padSamples = [...padSamples.slice(1 - PAD_PEAK_SAMPLES), ms];
         socket.send(`l ${Math.round(padDelay)}`);
         drawPadStatus();
       }
@@ -498,6 +517,7 @@ function setupGamepad(options) {
       padSocket = null;
       padReady = false;
       padDelay = null;
+      padSamples = [];
       releasePad();
       drawPadStatus();
       // 4000: the host removed this player or ended the party. Don't come back.
