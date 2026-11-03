@@ -161,7 +161,7 @@ To update, run `pc-remote update`. It installs the latest release and restarts t
 
 <table>
   <tr>
-    <td width="660"><img src="docs/gamepad.gif" width="640" alt="Running in a circle with the left stick while tapping A, B and Y, aiming with the right stick while holding RT, and sliding around the D-pad"></td>
+    <td width="660"><img src="docs/gamepad.gif" width="640" alt="The left stick starting under the thumb and running in a circle while tapping A, B and Y, sprinting with the stick held in, then aiming with the right stick while holding RT"></td>
   </tr>
 </table>
 
@@ -186,6 +186,16 @@ Open the **Game** tab and turn the phone sideways. The first time, the PC gets a
 Tap the pencil on the controller. **Drag** controls to move them, **tap** one to resize it with the slider or **Hide** it (the right stick also chooses how it aims), and tap **Done** to save. **Reset** brings back the default layout.
 
 Layouts are stored on the PC in `~/.config/pc-remote/gamepad.json` as shares of the screen, so a layout works on any phone and survives reinstalling the Home Screen app.
+
+#### Swipe to aim
+
+<table>
+  <tr>
+    <td width="660"><img src="docs/aim.gif" width="640" alt="In the layout editor, tapping the right stick, choosing Swipe, raising Speed to 150% and saving, then swiping to aim while holding RT"></td>
+  </tr>
+</table>
+
+Tap the pencil, tap the right stick, and set **Aim** to **Swipe**. The right stick's area becomes a swipe pad: swipe to turn, lift and swipe again, like a mouse. Double tap still clicks R3. **Speed** sets how far a swipe turns, and the game's own mouse sensitivity scales it further.
 
 Your app is player 1. If another phone signs in to the app and opens the Game tab, it takes over player 1. Friends join as other players through a [party](#party). iPhones can't vibrate from a web app, so there's no rumble or button feedback on iPhone. Android vibrates briefly on each press.
 
