@@ -62,14 +62,9 @@ function setupGamepad(options) {
   const TAP_MOVE_PX = 12;
   const DOUBLE_TAP_MS = 350;
   const DOUBLE_TAP_PX = 60;
-  // A thumb never holds a stick exactly at the edge, so 90% tilt counts as full,
-  // and 75% while the stick is clicked (sprinting), so drifting back a little
-  // doesn't slow down or drop the game out of sprint.
-  const FULL_TILT = 0.9;
+  // While a stick is clicked (sprinting), 75% tilt counts as full, so a thumb
+  // drifting back a little doesn't drop the game out of sprint.
   const SPRINT_TILT = 0.75;
-  // How far past the edge, as a share of the stick's travel, the thumb can go
-  // and come back before the stick's center starts following it.
-  const STICK_SLACK = 1.35;
   const PAD_BITS = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, back: 6, start: 7, home: 8, l3: 9, r3: 10 };
   const DPAD_BITS = { up: 11, down: 12, left: 13, right: 14 };
   const PAD_ICONS = {
@@ -82,14 +77,22 @@ function setupGamepad(options) {
     { id: 'lb', name: 'LB', spoken: 'Left bumper', w: 84, h: 44, x: 178, y: 34 },
     { id: 'rb', name: 'RB', spoken: 'Right bumper', w: 84, h: 44, x: 666, y: 34 },
     { id: 'rt', name: 'RT', spoken: 'Right trigger', w: 84, h: 44, x: 758, y: 34, look: 'rt' },
-    { id: 'ls', name: 'Left stick', spoken: 'Left stick', kind: 'stick', w: 224, h: 306, x: 136, y: 221, base: 112, knob: 56, hint: 'Touch anywhere' },
+    // Stick tuning, from recordings of real play and a model of aiming:
+    //   full   the share of travel that already counts as full tilt
+    //   slack  how far past the edge, as a share of travel, the thumb can go and
+    //          come back before the stick's center starts following it
+    // The left stick is for running: a thumb never holds the very edge, so it
+    // gets both. The right stick aims, where every bit of travel is precision
+    // and a fast turn must stop at once, so it gets neither, and a bigger base:
+    // more travel means less wobble from an unsteady thumb.
+    { id: 'ls', name: 'Left stick', spoken: 'Left stick', kind: 'stick', w: 224, h: 306, x: 136, y: 221, base: 112, knob: 56, full: 0.9, slack: 1.35, hint: 'Touch anywhere' },
     { id: 'dpad', name: 'D-pad', spoken: 'D-pad', kind: 'dpad', w: 124, h: 124, x: 318, y: 300 },
     { id: 'back', name: 'Back', spoken: 'Back', icon: 'back', w: 44, h: 44, x: 374, y: 126, look: 'round' },
     { id: 'home', name: 'Home', spoken: 'Home', icon: 'home', w: 52, h: 52, x: 422, y: 118, look: 'round' },
     { id: 'start', name: 'Start', spoken: 'Start', icon: 'start', w: 44, h: 44, x: 470, y: 126, look: 'round' },
     { id: 'l3', name: 'L3', spoken: 'Left stick press', w: 48, h: 32, x: 392, y: 176, look: 'small' },
     { id: 'r3', name: 'R3', spoken: 'Right stick press', w: 48, h: 32, x: 452, y: 176, look: 'small' },
-    { id: 'rs', name: 'Right stick', spoken: 'Right stick', kind: 'stick', w: 156, h: 160, x: 542, y: 294, base: 88, knob: 44, hint: 'Right stick' },
+    { id: 'rs', name: 'Right stick', spoken: 'Right stick', kind: 'stick', w: 200, h: 180, x: 542, y: 294, base: 144, knob: 48, full: 1, slack: 1, hint: 'Right stick' },
     { id: 'y', name: 'Y', spoken: 'Y', w: 60, h: 60, x: 710, y: 92, look: 'face' },
     { id: 'x', name: 'X', spoken: 'X', w: 60, h: 60, x: 648, y: 154, look: 'face' },
     { id: 'b', name: 'B', spoken: 'B', w: 60, h: 60, x: 772, y: 154, look: 'face' },
@@ -175,7 +178,7 @@ function setupGamepad(options) {
       const travel = PAD_BY_ID[id].base / 2;
       const tilt = stick ? Math.hypot(stick.dx, stick.dy) / travel : 0;
       if (!tilt) return '0 0';
-      const k = (Math.min(tilt / (stick.click ? SPRINT_TILT : FULL_TILT), 1) / tilt / travel) * STICK_MAX;
+      const k = (Math.min(tilt / (stick.click ? SPRINT_TILT : PAD_BY_ID[id].full), 1) / tilt / travel) * STICK_MAX;
       return `${Math.round(stick.dx * k)} ${Math.round(stick.dy * k)}`;
     };
     const trigger = (id) => (held.has(id) ? 255 : 0);
@@ -291,14 +294,13 @@ function setupGamepad(options) {
       if (!stick || stick.pointer !== event.pointerId) return;
       const at = toPad(event);
       stick.far = Math.max(stick.far, Math.hypot(at.x - stick.start.x, at.y - stick.start.y));
-      // A little past the edge the stick stays at full tilt, so a wobbling
-      // thumb keeps full speed. Further out the stick's center follows the
-      // thumb, so turning back still moves the stick quickly.
+      // Past the edge plus the stick's slack, its center follows the thumb, so
+      // turning back moves the stick quickly.
       const p = toControl(control, event);
       let dx = p.x - stick.ox;
       let dy = p.y - stick.oy;
       const travel = control.base / 2;
-      const reach = travel * STICK_SLACK;
+      const reach = travel * control.slack;
       if (Math.hypot(dx, dy) > reach) {
         const distance = Math.hypot(dx, dy);
         stick.ox = Math.min(Math.max(p.x - (dx * reach) / distance, 0), control.w);
