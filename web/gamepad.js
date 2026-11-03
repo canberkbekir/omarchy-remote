@@ -62,6 +62,9 @@ function setupGamepad(options) {
   const TAP_MOVE_PX = 12;
   const DOUBLE_TAP_MS = 350;
   const DOUBLE_TAP_PX = 60;
+  // While a stick is clicked (sprinting), this much tilt already counts as full,
+  // so a thumb drifting back a little doesn't drop the game out of sprint.
+  const SPRINT_TILT = 0.75;
   const PAD_BITS = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, back: 6, start: 7, home: 8, l3: 9, r3: 10 };
   const DPAD_BITS = { up: 11, down: 12, left: 13, right: 14 };
   const PAD_ICONS = {
@@ -162,12 +165,16 @@ function setupGamepad(options) {
     for (const [dir, bit] of Object.entries(DPAD_BITS)) if (padDpad.dirs[dir]) bits |= 1 << bit;
     if (padSticks.ls?.click) bits |= 1 << PAD_BITS.l3;
     if (padSticks.rs?.click) bits |= 1 << PAD_BITS.r3;
-    const axis = (id, key) => {
+    const axes = (id) => {
       const stick = padSticks[id];
-      return stick ? Math.round((stick[key] / (PAD_BY_ID[id].base / 2)) * STICK_MAX) : 0;
+      const travel = PAD_BY_ID[id].base / 2;
+      const tilt = stick ? Math.hypot(stick.dx, stick.dy) / travel : 0;
+      if (!tilt) return '0 0';
+      const k = (Math.min(tilt / (stick.click ? SPRINT_TILT : 1), 1) / tilt / travel) * STICK_MAX;
+      return `${Math.round(stick.dx * k)} ${Math.round(stick.dy * k)}`;
     };
     const trigger = (id) => (held.has(id) ? 255 : 0);
-    return `g ${bits} ${axis('ls', 'dx')} ${axis('ls', 'dy')} ${axis('rs', 'dx')} ${axis('rs', 'dy')} ${trigger('lt')} ${trigger('rt')}`;
+    return `g ${bits} ${axes('ls')} ${axes('rs')} ${trigger('lt')} ${trigger('rt')}`;
   }
 
   // Every change goes out at once; the browser already delivers moves no faster
