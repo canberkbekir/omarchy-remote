@@ -62,9 +62,14 @@ function setupGamepad(options) {
   const TAP_MOVE_PX = 12;
   const DOUBLE_TAP_MS = 350;
   const DOUBLE_TAP_PX = 60;
-  // While a stick is clicked (sprinting), this much tilt already counts as full,
-  // so a thumb drifting back a little doesn't drop the game out of sprint.
+  // A thumb never holds a stick exactly at the edge, so 90% tilt counts as full,
+  // and 75% while the stick is clicked (sprinting), so drifting back a little
+  // doesn't slow down or drop the game out of sprint.
+  const FULL_TILT = 0.9;
   const SPRINT_TILT = 0.75;
+  // How far past the edge, as a share of the stick's travel, the thumb can go
+  // and come back before the stick's center starts following it.
+  const STICK_SLACK = 1.35;
   const PAD_BITS = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, back: 6, start: 7, home: 8, l3: 9, r3: 10 };
   const DPAD_BITS = { up: 11, down: 12, left: 13, right: 14 };
   const PAD_ICONS = {
@@ -170,7 +175,7 @@ function setupGamepad(options) {
       const travel = PAD_BY_ID[id].base / 2;
       const tilt = stick ? Math.hypot(stick.dx, stick.dy) / travel : 0;
       if (!tilt) return '0 0';
-      const k = (Math.min(tilt / (stick.click ? SPRINT_TILT : 1), 1) / tilt / travel) * STICK_MAX;
+      const k = (Math.min(tilt / (stick.click ? SPRINT_TILT : FULL_TILT), 1) / tilt / travel) * STICK_MAX;
       return `${Math.round(stick.dx * k)} ${Math.round(stick.dy * k)}`;
     };
     const trigger = (id) => (held.has(id) ? 255 : 0);
@@ -286,18 +291,25 @@ function setupGamepad(options) {
       if (!stick || stick.pointer !== event.pointerId) return;
       const at = toPad(event);
       stick.far = Math.max(stick.far, Math.hypot(at.x - stick.start.x, at.y - stick.start.y));
-      // Past the edge the stick's center follows the thumb, so turning back
-      // moves the stick at once instead of after the thumb returns to the ring.
+      // A little past the edge the stick stays at full tilt, so a wobbling
+      // thumb keeps full speed. Further out the stick's center follows the
+      // thumb, so turning back still moves the stick quickly.
       const p = toControl(control, event);
       let dx = p.x - stick.ox;
       let dy = p.y - stick.oy;
       const travel = control.base / 2;
+      const reach = travel * STICK_SLACK;
+      if (Math.hypot(dx, dy) > reach) {
+        const distance = Math.hypot(dx, dy);
+        stick.ox = Math.min(Math.max(p.x - (dx * reach) / distance, 0), control.w);
+        stick.oy = Math.min(Math.max(p.y - (dy * reach) / distance, 0), control.h);
+        dx = p.x - stick.ox;
+        dy = p.y - stick.oy;
+      }
       const distance = Math.hypot(dx, dy);
       if (distance > travel) {
         dx = (dx * travel) / distance;
         dy = (dy * travel) / distance;
-        stick.ox = Math.min(Math.max(p.x - dx, 0), control.w);
-        stick.oy = Math.min(Math.max(p.y - dy, 0), control.h);
       }
       stick.dx = dx;
       stick.dy = dy;
