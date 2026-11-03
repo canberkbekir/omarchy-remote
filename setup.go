@@ -28,6 +28,7 @@ type answers struct {
 	Theme        string
 	Party        bool
 	AutoUpdate   bool // update along with Omarchy
+	Bar          bool // show the icon in the Omarchy bar
 }
 
 // defaultAnswers starts from the current settings, or the best guess for a new setup.
@@ -48,6 +49,7 @@ func defaultAnswers(s system) answers {
 	}
 	// Turned on for a new setup; after that it stays as the owner left it.
 	a.AutoUpdate = s.OmarchyHooks != "" && (s.UpdateHook || !s.HasConfig)
+	a.Bar = s.BarPluginDir != "" && (s.BarPlugin || !s.HasConfig)
 	a.OpenFirewall = true
 	return a
 }
@@ -117,6 +119,19 @@ func plan(s system, a answers) []action {
 			actions = append(actions, action{
 				Label: "Stop updating Omarchy Remote with omarchy update",
 				Run:   func() error { return os.Remove(hook) },
+			})
+		}
+	}
+	if dir := s.BarPluginDir; dir != "" && a.Bar != s.BarPlugin {
+		if a.Bar {
+			actions = append(actions, action{
+				Label: "Add the Omarchy Remote icon to the bar",
+				Run:   func() error { return installBarPlugin(dir, s.Executable) },
+			})
+		} else {
+			actions = append(actions, action{
+				Label: "Take the Omarchy Remote icon off the bar",
+				Run:   func() error { return removeBarPlugin(dir) },
 			})
 		}
 	}
@@ -346,9 +361,10 @@ func runSetup(args []string, stdout io.Writer) int {
 	name := flags.String("name", "", "the title at the top of the app")
 	theme := flags.String("theme", "", `"default", "omarchy" or your own theme`)
 	party := flags.Bool("party", true, "let friends join games as players 2 to 4")
+	bar := flags.Bool("bar", true, "show the Omarchy Remote icon in the Omarchy bar")
 	flags.SetOutput(stdout)
 	flags.Usage = func() {
-		fmt.Fprintln(stdout, "Usage: pc-remote setup [--yes] [--access lan|tailscale|both] [--name NAME] [--theme THEME] [--party=false]")
+		fmt.Fprintln(stdout, "Usage: pc-remote setup [--yes] [--access lan|tailscale|both] [--name NAME] [--theme THEME] [--party=false] [--bar=false]")
 		fmt.Fprintln(stdout, "\nSets up Omarchy Remote. Without --yes it asks, step by step.")
 		flags.PrintDefaults()
 	}
@@ -376,6 +392,9 @@ func runSetup(args []string, stdout io.Writer) int {
 	}
 	if set["party"] {
 		a.Party = *party
+	}
+	if set["bar"] {
+		a.Bar = *bar && s.BarPluginDir != ""
 	}
 	if !validAccess(a.Access) {
 		fmt.Fprintf(stdout, "--access must be \"lan\", \"tailscale\" or \"both\", not %q\n", a.Access)

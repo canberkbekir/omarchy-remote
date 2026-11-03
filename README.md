@@ -71,13 +71,17 @@ cd omarchy-remote
 Either way, setup walks you through the rest:
 
 1. **A check of the PC.** Anything missing (like `playerctl` for the media controls) is named by the feature it affects, and setup offers to install it.
-2. **A few questions:** how your phone connects (same Wi-Fi, Tailscale or both), the name shown in the app, its colors, whether friends can join games, and the passcode: keep the current one (or have one made for you) or choose your own. Press `?` on a question for more detail.
+2. **A few questions:** how your phone connects (same Wi-Fi, Tailscale or both), the name shown in the app, its colors, whether friends can join games, whether to update along with Omarchy and show an icon in its bar, and the passcode: keep the current one (or have one made for you) or choose your own. Press `?` on a question for more detail.
 3. **A review** of every change before anything happens, including the ones that ask for your password (installing packages, opening the firewall to your home network, `tailscale serve`).
 4. **A QR code and the passcode.** Scan the code with your phone, tap **Share**, then **Add to Home Screen**, and open the new icon.
 
 Run `pc-remote setup` again at any time to change your answers. It starts from your current settings.
 
 To update, run `pc-remote update`. It installs the latest release and restarts the app, and keeps your settings. On Omarchy, setup also offers to do this for you after every `omarchy update`. In a clone, run `git pull && ./install.sh` instead. Versions before v0.1.3 don't have `update` yet, so run the install command above once more.
+
+**In the Omarchy bar**
+
+On Omarchy, setup offers a phone icon for the bar. It lights up while your phone is connected and is highlighted during a party. Click it for a card with the app's QR code, its address and the passcode, which stays hidden until you click it. It's an Omarchy shell plugin in `~/.config/omarchy/plugins/canberkbekir.omarchy-remote`, it updates with Omarchy Remote, and it moves like any other bar widget. `pc-remote setup --bar=false` takes it off again.
 
 **Commands**
 
@@ -87,6 +91,7 @@ To update, run `pc-remote update`. It installs the latest release and restarts t
 | `pc-remote doctor` | check every part (tools, service, firewall, Tailscale) and say how to fix what's wrong |
 | `pc-remote passcode` | show the passcode. `--reset` makes a new one, and phones sign in again |
 | `pc-remote update` | install the latest release and restart the service. `--check` only says whether there is one |
+| `pc-remote status` | say whether it's running and a phone is connected. `--connect` adds the address |
 | `pc-remote version` | show the version |
 
 ## A tour of the app
@@ -351,6 +356,8 @@ New themes are welcome as pull requests: add `themes/<name>.css` with a screensh
 systemctl --user disable --now pc-remote-web
 rm ~/.config/systemd/user/pc-remote-web.service ~/.local/bin/pc-remote-web ~/.local/bin/pc-remote
 rm -f ~/.config/omarchy/hooks/post-update.d/omarchy-remote.hook   # updating along with Omarchy
+omarchy plugin disable canberkbekir.omarchy-remote                 # the bar icon
+rm -rf ~/.config/omarchy/plugins/canberkbekir.omarchy-remote
 rm -r ~/.config/pc-remote   # your passcode, config, themes and gamepad layout
 ```
 

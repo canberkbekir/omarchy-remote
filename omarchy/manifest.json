@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "canberkbekir.omarchy-remote",
+  "name": "Omarchy Remote",
+  "version": "1.0.0",
+  "author": "canberkbekir",
+  "license": "MIT",
+  "description": "Shows whether a phone is using Omarchy Remote, and opens a card with the app's QR code and passcode.",
+  "kinds": ["bar-widget", "panel"],
+  "entryPoints": {
+    "barWidget": "Widget.qml",
+    "panel": "Card.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy Remote",
+    "description": "Phone connection status; click for the QR code and passcode.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

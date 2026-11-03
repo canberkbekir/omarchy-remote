@@ -49,6 +49,7 @@ const (
 	stagePasscode
 	stagePasscodeEntry // typing a passcode of your own, part of the passcode step
 	stageUpdates
+	stageBar
 	stageFirewall
 	stageReview
 )
@@ -97,12 +98,15 @@ func newWizard(s system, a answers) wizard {
 	return w
 }
 
-// steps are the numbered questions; updates show only on Omarchy, and the
-// firewall only when needed.
+// steps are the numbered questions; updates and the bar show only on Omarchy,
+// and the firewall only when needed.
 func (w wizard) steps() []stage {
 	steps := []stage{stageConnect, stageName, stageTheme, stageParty, stagePasscode}
 	if w.s.OmarchyHooks != "" {
 		steps = append(steps, stageUpdates)
+	}
+	if w.s.BarPluginDir != "" {
+		steps = append(steps, stageBar)
 	}
 	if len(w.s.firewallBlocks(w.answers)) > 0 {
 		steps = append(steps, stageFirewall)
@@ -156,6 +160,8 @@ func (w wizard) currentValue() string {
 		return yesNo(a.Party)
 	case stageUpdates:
 		return yesNo(a.AutoUpdate)
+	case stageBar:
+		return yesNo(a.Bar)
 	case stageFirewall:
 		return yesNo(a.OpenFirewall)
 	case stagePasscode:
@@ -276,6 +282,8 @@ func (w wizard) pick(value string) (tea.Model, tea.Cmd) {
 		w.answers.Party = yes
 	case stageUpdates:
 		w.answers.AutoUpdate = yes
+	case stageBar:
+		w.answers.Bar = yes
 	case stageFirewall:
 		w.answers.OpenFirewall = yes
 	case stagePasscode:
@@ -450,6 +458,18 @@ func (w wizard) question() question {
 			},
 		}
 
+	case stageBar:
+		return question{
+			title: "Show Omarchy Remote in the Omarchy bar?",
+			why:   "A phone icon that lights up while your phone is connected. Click it for the QR code and passcode.",
+			more: "It's a bar plugin in " + tildePath(s.BarPluginDir) + ", kept current when Omarchy Remote updates. " +
+				"Move it like any other bar widget. It also highlights while a party is running.",
+			choices: []choice{
+				{value: "yes", title: "Yes, add the icon", tag: "recommended", desc: "It goes on the right of the bar."},
+				{value: "no", title: "No", desc: "The bar stays as it is."},
+			},
+		}
+
 	case stageFirewall:
 		ports := s.firewallBlocks(a)
 		what := "the app"
@@ -596,7 +616,7 @@ func (w wizard) stepBar() string {
 	st := w.st
 	steps := w.steps()
 	names := map[stage]string{stageConnect: "Connect", stageName: "Name", stageTheme: "Colors",
-		stageParty: "Party", stagePasscode: "Passcode", stageUpdates: "Updates", stageFirewall: "Firewall"}
+		stageParty: "Party", stagePasscode: "Passcode", stageUpdates: "Updates", stageBar: "Bar", stageFirewall: "Firewall"}
 	at := slices.Index(steps, w.step())
 	var parts []string
 	for i, s := range steps {
@@ -649,6 +669,13 @@ func (w wizard) review(width int) string {
 			updates = "With omarchy update"
 		}
 		rows = append(rows, [2]string{"Updates", updates})
+	}
+	if s.BarPluginDir != "" {
+		icon := "Not shown"
+		if a.Bar {
+			icon = "Phone icon"
+		}
+		rows = append(rows, [2]string{"Bar", icon})
 	}
 
 	var b strings.Builder

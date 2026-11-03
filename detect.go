@@ -69,6 +69,9 @@ type system struct {
 
 	OmarchyHooks string // ~/.config/omarchy/hooks; empty without Omarchy
 	UpdateHook   bool   // the post-update hook that runs pc-remote update is there
+
+	BarPluginDir string // where the bar widget goes; empty without the Omarchy shell
+	BarPlugin    bool   // the bar widget is installed
 }
 
 func (s system) missingPackages() []string {
@@ -153,6 +156,13 @@ func detectSystem(dir string) system {
 		s.HasPasscode = true
 	}
 	s.OmarchyTheme = omarchyThemeName()
+	if _, ok := lookPath("omarchy-shell"); ok {
+		if dir, err := barPluginDir(); err == nil {
+			s.BarPluginDir = dir
+			_, err := os.Stat(dir)
+			s.BarPlugin = err == nil
+		}
+	}
 	if config, err := os.UserConfigDir(); err == nil {
 		if info, err := os.Stat(filepath.Join(config, "omarchy", "hooks")); err == nil && info.IsDir() {
 			s.OmarchyHooks = filepath.Join(config, "omarchy", "hooks")

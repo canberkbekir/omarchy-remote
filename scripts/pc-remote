@@ -1,10 +1,10 @@
 #!/bin/bash
 # Runs a command inside the current Hyprland session, e.g. `pc-remote omarchy-system-lock`.
 # The web app runs session commands through it, and it also works from an SSH login.
-# `pc-remote setup`, `doctor`, `passcode`, `update` and `version` go to the server program.
+# `pc-remote setup`, `doctor`, `passcode`, `update`, `status` and `version` go to the server program.
 
 case "${1:-help}" in
-  setup | doctor | passcode | update | version | --version | help | --help | -h)
+  setup | doctor | passcode | update | status | version | --version | help | --help | -h)
     exec "$(dirname "$(readlink -f "$0")")/pc-remote-web" "${@:-help}"
     ;;
 esac

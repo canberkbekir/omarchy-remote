@@ -36,6 +36,7 @@ Usage:
   pc-remote passcode           show the passcode
   pc-remote passcode --reset   make a new passcode; phones sign in again
   pc-remote update             install the latest release
+  pc-remote status             say whether it runs and a phone is connected
   pc-remote version            show the version
   pc-remote <command>          run a command in the Hyprland session
 
@@ -57,6 +58,8 @@ func runCommandLine(args []string, out io.Writer) (int, bool) {
 		return runPasscode(args[1:], out), true
 	case "update":
 		return runUpdate(args[1:], out), true
+	case "status":
+		return runStatus(args[1:], out), true
 	case "version", "--version", "-v":
 		fmt.Fprintln(out, "Omarchy Remote", versionString())
 		return 0, true

@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -167,6 +168,8 @@ type app struct {
 	openGuestPad func() (*gamepad, error)
 	guestMu      sync.Mutex
 	guestServer  *http.Server // runs only while a party does
+
+	phoneSeen atomic.Int64 // when a phone last polled the status, in Unix nanoseconds
 }
 
 func loadPasscode(dir string) (string, error) {
@@ -441,6 +444,7 @@ func (a *app) auth(next http.HandlerFunc) http.HandlerFunc {
 
 // The status poll also carries the title and the theme version, so both update live.
 func (a *app) handleStatus(w http.ResponseWriter, r *http.Request) {
+	a.phoneSeen.Store(time.Now().UnixNano())
 	s, err := readStatus()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not read status.")
@@ -657,6 +661,8 @@ func main() {
 		openGuestPad:    openVirtualGamepad,
 	}
 
+	syncBarPlugin()
+
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
 		log.Fatal(err)
 	}
@@ -675,6 +681,7 @@ func main() {
 	mux.HandleFunc("GET /api/gamepad/layout", a.auth(a.handleLayoutRead))
 	mux.HandleFunc("POST /api/gamepad/layout", a.auth(a.handleLayoutSave))
 	mux.HandleFunc("GET /api/party", a.auth(a.handlePartyRead))
+	mux.HandleFunc("GET /api/presence", a.auth(a.handlePresence))
 	mux.HandleFunc("POST /api/party", a.auth(a.handlePartyChange))
 	mux.HandleFunc("GET /api/art", a.auth(handleArt))
 	mux.HandleFunc("GET /api/outputs", a.auth(handleOutputs))
