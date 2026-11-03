@@ -168,6 +168,7 @@ To update, run `pc-remote update`. It installs the latest release and restarts t
 Open the **Game** tab and turn the phone sideways. The first time, the PC gets a virtual Xbox 360 controller named "PC Remote Gamepad". Steam and games that use SDL pick it up as a standard Xbox 360 controller, with no setup.
 
 - **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb. A touch on empty space that's closer to the left stick than to any other control starts the left stick too. On the left stick you can go a little past the edge and back without slowing down, and 90% tilt counts as full. The right stick is bigger, for finer aim, and follows your thumb as soon as it passes the edge, so a fast turn stops at once.
+- **Swipe to aim:** in the layout editor, tap the right stick and set **Aim** to **Swipe**. A swipe then moves the PC's mouse instead of tilting the stick, so the same swipe always turns the camera the same amount, like a mouse or a phone shooter. **Speed** sets how far. It works in games that take a controller and a mouse together; games that switch to keyboard-and-mouse mode when the mouse moves are better with **Stick**. Party guests always aim with the stick, and their phones can never move the mouse.
 - **L3 and R3:** tap a stick, then touch it again and hold. The stick stays clicked while it moves, so you can sprint or melee without letting go. While the left stick is clicked, or the L3 button is held, three quarters of the way out already counts as full tilt, so a thumb drifting back a little doesn't stop a sprint. The L3 and R3 buttons work too.
 - **D-pad:** slide between directions. The corners press two at once.
 - **Every finger counts:** move, aim, hold a trigger and press a face button at the same time.
@@ -182,7 +183,7 @@ Open the **Game** tab and turn the phone sideways. The first time, the PC gets a
   </tr>
 </table>
 
-Tap the pencil on the controller. **Drag** controls to move them, **tap** one to resize it with the slider or **Hide** it, and tap **Done** to save. **Reset** brings back the default layout.
+Tap the pencil on the controller. **Drag** controls to move them, **tap** one to resize it with the slider or **Hide** it (the right stick also chooses how it aims), and tap **Done** to save. **Reset** brings back the default layout.
 
 Layouts are stored on the PC in `~/.config/pc-remote/gamepad.json` as shares of the screen, so a layout works on any phone and survives reinstalling the Home Screen app.
 

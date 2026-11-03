@@ -203,6 +203,20 @@ nav { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 
 .gp-selected span { flex-shrink: 0; font-family: var(--mono); font-size: 12px; }
 .gp-selected input { flex-grow: 1; min-width: 0; margin: 0; accent-color: var(--accent); touch-action: manipulation; }
 .gp-toolbar .gp-selected button { height: 32px; background: var(--ground); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font-size: 13px; }
+.gp-aim { position: absolute; z-index: 7; top: 64px; left: 50%; transform: translateX(-50%); width: min(400px, calc(100% - 24px)); display: flex; flex-direction: column; gap: 6px; }
+.gp-aim[hidden] { display: none; }
+.gp-aim.low { top: auto; bottom: 64px; flex-direction: column-reverse; }
+.gp-aim-row { height: 44px; padding: 0 10px 0 12px; display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); font-family: var(--mono); font-size: 12px; color: var(--soft); }
+.gp-segments { flex-shrink: 0; display: flex; padding: 3px; gap: 2px; background: var(--ground); border-radius: 10px; }
+.gp-segments button { height: 32px; padding: 0 14px; background: transparent; border: 0; border-radius: 8px; color: var(--soft); font-size: 13px; font-weight: 600; touch-action: manipulation; }
+.gp-segments button[aria-checked="true"] { background: var(--accent); color: var(--ground); }
+.gp-aim-fact { flex-grow: 1; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+.gp-speed { flex-grow: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.gp-speed[hidden] { display: none; }
+.gp-speed input { flex-grow: 1; min-width: 0; margin: 0; accent-color: var(--accent); touch-action: manipulation; }
+.gp-speed-value { width: 36px; text-align: right; color: var(--ink); }
+.gp-aim-note { margin: 0; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font-family: var(--mono); font-size: 12px; line-height: 1.45; color: var(--soft); }
+.gp-c.swipe .gp-base, .gp-c.swipe .gp-ring { display: none; }
 .gp-sizer { position: fixed; inset: 0; visibility: hidden; pointer-events: none; }
 
 /* Guest join page */

@@ -630,5 +630,5 @@ func (a *app) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer a.party.disconnect(g, session)
-	playGamepad(session, conn, g.pad, a.gamepadTimeout, func(ms int) { g.delay.Store(int32(ms)) })
+	playGamepad(session, conn, g.pad, a.gamepadTimeout, func(ms int) { g.delay.Store(int32(ms)) }, nil)
 }

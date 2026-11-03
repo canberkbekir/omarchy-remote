@@ -251,6 +251,22 @@ func asCloseError(err error, target *websocket.CloseError) bool {
 	return false
 }
 
+func TestGuestCannotMoveTheMouse(t *testing.T) {
+	a, events, _ := partyApp(t)
+	var opened atomic.Bool
+	a.openKeyboard = func() (*keyboard, error) {
+		opened.Store(true)
+		return &keyboard{out: &recorder{}, held: map[uint16]bool{}}, nil
+	}
+	a.party.start()
+	conn := connect(t, playURL(t, a), joinToken(t, a, "Ayşe"))
+	send(t, conn, "m 50 50", "g 1 0 0 0 0 0 0")
+	events.waitFor(t, "down a")
+	if opened.Load() {
+		t.Error("a guest's swipe must not reach the PC's mouse")
+	}
+}
+
 func TestGuestPlaysAndIsRemoved(t *testing.T) {
 	a, events, closer := partyApp(t)
 	a.party.start()

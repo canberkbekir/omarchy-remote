@@ -37,6 +37,21 @@ function setupGamepad(options) {
     </div>
     <button type="button" class="gp-done" id="gp-done">Done</button>
   </div>
+  <div class="gp-aim" id="gp-aim" hidden>
+    <div class="gp-aim-row">
+      <span class="gp-aim-label">Aim</span>
+      <div class="gp-segments" role="radiogroup" aria-label="How the right stick aims">
+        <button type="button" role="radio" id="gp-aim-stick">Stick</button>
+        <button type="button" role="radio" id="gp-aim-swipe">Swipe</button>
+      </div>
+      <p class="gp-aim-fact" id="gp-aim-fact">Works in every game</p>
+      <label class="gp-speed" id="gp-speed-box" hidden>Speed
+        <input type="range" id="gp-speed" min="25" max="400" step="25">
+        <span class="gp-speed-value" id="gp-speed-value"></span>
+      </label>
+    </div>
+    <p class="gp-aim-note" id="gp-aim-note" hidden>Swipe moves the PC's mouse, so a swipe turns the camera like a mouse would. Best in games that take a controller and a mouse together.</p>
+  </div>
 </div>
 `);
 
@@ -63,6 +78,9 @@ function setupGamepad(options) {
   const TAP_MOVE_PX = 12;
   const DOUBLE_TAP_MS = 350;
   const DOUBLE_TAP_PX = 60;
+  // Swipe-to-aim: mouse counts per pixel of the 844×390 reference screen at
+  // 100% speed. No acceleration, so the same swipe always turns the same angle.
+  const SWIPE_COUNTS = 3;
   const PAD_BITS = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, back: 6, start: 7, home: 8, l3: 9, r3: 10 };
   const DPAD_BITS = { up: 11, down: 12, left: 13, right: 14 };
   const PAD_ICONS = {
@@ -134,8 +152,17 @@ function setupGamepad(options) {
 
   const buzz = () => navigator.vibrate?.(8);
 
+  function screenScale() {
+    return Math.min(padSize.w / PAD_W, padSize.h / PAD_H);
+  }
+
   function padScale(id) {
-    return Math.min(padSize.w / PAD_W, padSize.h / PAD_H) * (padLayout[id].size / 100);
+    return screenScale() * (padLayout[id].size / 100);
+  }
+
+  // The right stick can aim by swiping instead, which moves the PC's mouse.
+  function isSwipe(id) {
+    return id === 'rs' && padLayout.rs.aim === 'swipe';
   }
 
   // Turned is drawn sideways on an upright screen (rotation lock), so screen
@@ -297,6 +324,7 @@ function setupGamepad(options) {
       const click = !!tap && at.t - tap.t < DOUBLE_TAP_MS && Math.hypot(at.x - tap.x, at.y - tap.y) < DOUBLE_TAP_PX;
       delete padStickTaps[control.id];
       padSticks[control.id] = { pointer: event.pointerId, ox: p.x, oy: p.y, dx: 0, dy: 0, click, start: at, far: 0 };
+      if (isSwipe(control.id)) Object.assign(padSticks[control.id], { swipe: true, last: at, restX: 0, restY: 0 });
       if (click) navigator.vibrate?.(25);
     } else if (control.kind === 'dpad') {
       padDpad = { pointer: event.pointerId, dirs: dpadDirs(control, event) };
@@ -316,6 +344,10 @@ function setupGamepad(options) {
       if (!stick || stick.pointer !== event.pointerId) return;
       const at = toPad(event);
       stick.far = Math.max(stick.far, Math.hypot(at.x - stick.start.x, at.y - stick.start.y));
+      if (stick.swipe) {
+        swipeMove(control, stick, event, at);
+        return;
+      }
       // Past the edge plus the stick's slack, its center follows the thumb, so
       // turning back moves the stick quickly.
       const p = toControl(control, event);
@@ -351,6 +383,25 @@ function setupGamepad(options) {
     sendMove();
   }
 
+  // A swipe moves the mouse by how far the finger went, in whole counts, with
+  // the fractions carried over so slow swipes still add up. The stick itself
+  // stays centered; the knob just follows the finger.
+  function swipeMove(control, stick, event, at) {
+    const counts = (SWIPE_COUNTS * (padLayout.rs.speed ?? 100)) / 100 / screenScale();
+    stick.restX += (at.x - stick.last.x) * counts;
+    stick.restY += (at.y - stick.last.y) * counts;
+    stick.last = at;
+    const mx = Math.trunc(stick.restX);
+    const my = Math.trunc(stick.restY);
+    stick.restX -= mx;
+    stick.restY -= my;
+    if ((mx || my) && padReady) padSocket.send(`m ${mx} ${my}`);
+    const p = toControl(control, event);
+    stick.ox = p.x;
+    stick.oy = p.y;
+    drawControl(control);
+  }
+
   function padUp(control, event) {
     if (padEditing) {
       padDrag = null;
@@ -384,7 +435,8 @@ function setupGamepad(options) {
       const stick = padEditing ? null : padSticks[control.id];
       el.classList.toggle('active', !!stick);
       el.classList.toggle('clicked', !!stick?.click);
-      el.querySelector('.gp-zone-hint').textContent = padEditing ? control.name : control.hint;
+      el.classList.toggle('swipe', isSwipe(control.id));
+      el.querySelector('.gp-zone-hint').textContent = padEditing ? control.name : (isSwipe(control.id) ? 'Swipe to aim' : control.hint);
       if (stick) {
         const base = el.querySelector('.gp-base').style;
         const knob = el.querySelector('.gp-knob').style;
@@ -415,6 +467,20 @@ function setupGamepad(options) {
     $('gp-selected').hidden = !chosen;
     // The toolbar moves to the bottom when the chosen control is near the top.
     $('gp-toolbar').classList.toggle('low', !!chosen && padLayout[padSelected].y < 30);
+    const aiming = padEditing && padSelected === 'rs';
+    $('gp-aim').hidden = !aiming;
+    $('gp-aim').classList.toggle('low', $('gp-toolbar').classList.contains('low'));
+    if (aiming) {
+      const swipe = isSwipe('rs');
+      const speed = padLayout.rs.speed ?? 100;
+      $('gp-aim-stick').setAttribute('aria-checked', String(!swipe));
+      $('gp-aim-swipe').setAttribute('aria-checked', String(swipe));
+      $('gp-aim-fact').hidden = swipe;
+      $('gp-speed-box').hidden = !swipe;
+      $('gp-aim-note').hidden = !swipe;
+      $('gp-speed').value = speed;
+      $('gp-speed-value').textContent = `${speed}%`;
+    }
     if (chosen) {
       $('gp-name').textContent = chosen.name;
       $('gp-size').value = padLayout[padSelected].size;
@@ -639,6 +705,11 @@ function setupGamepad(options) {
   });
   $('gp-size').addEventListener('input', (event) => updateSelected({ size: Number(event.target.value) }));
   $('gp-hide').addEventListener('click', () => updateSelected({ hidden: !padLayout[padSelected].hidden }));
+  // The server wants aim and speed together.
+  const setAim = (aim) => updateSelected({ aim, speed: padLayout.rs.speed ?? 100 });
+  $('gp-aim-stick').addEventListener('click', () => setAim('stick'));
+  $('gp-aim-swipe').addEventListener('click', () => setAim('swipe'));
+  $('gp-speed').addEventListener('input', (event) => updateSelected({ speed: Number(event.target.value) }));
   // A touch on empty space whose nearest control is the left stick starts the
   // stick there, so a thumb landing just outside its area still moves. A touch
   // that just misses a button stays a miss.

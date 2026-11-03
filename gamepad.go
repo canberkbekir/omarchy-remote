@@ -288,14 +288,27 @@ func (a *app) handleGamepad(w http.ResponseWriter, r *http.Request) {
 	session, end := context.WithCancel(context.Background())
 	defer end()
 	a.startGamepadSession(end)
-	playGamepad(session, conn, device, a.gamepadTimeout, nil)
+	// Swipe-to-aim moves the PC's mouse. Only the admin's controller may; a
+	// guest's never does.
+	mouse := func(message string) {
+		k, err := a.keyboardDevice()
+		if err == nil {
+			err = k.handleMessage(message)
+		}
+		if err != nil {
+			log.Printf("moving the mouse: %v", err)
+		}
+	}
+	playGamepad(session, conn, device, a.gamepadTimeout, nil, mouse)
 }
 
 // playGamepad runs one phone's controller until the phone leaves, goes quiet
 // or the session is ended. It takes "g ..." state messages, answers "t ..."
 // with the same text so the phone can measure the delay, and passes on the
-// delay the phone reports with "l <ms>". Anything else keeps the session alive.
-func playGamepad(session context.Context, conn *websocket.Conn, device *gamepad, timeout time.Duration, onDelay func(int)) {
+// delay the phone reports with "l <ms>". Swipe-to-aim's mouse moves,
+// "m <dx> <dy>", go to onMouse, or nowhere when it is nil. Anything else keeps
+// the session alive.
+func playGamepad(session context.Context, conn *websocket.Conn, device *gamepad, timeout time.Duration, onDelay func(int), onMouse func(string)) {
 	device.reset()
 	defer device.reset()
 	if err := conn.Write(session, websocket.MessageText, []byte("ok")); err != nil {
@@ -313,6 +326,10 @@ func playGamepad(session context.Context, conn *websocket.Conn, device *gamepad,
 		case strings.HasPrefix(text, "t "):
 			if err := conn.Write(session, websocket.MessageText, message); err != nil {
 				return
+			}
+		case strings.HasPrefix(text, "m "):
+			if onMouse != nil {
+				onMouse(text)
 			}
 		case strings.HasPrefix(text, "l "):
 			if ms, err := strconv.Atoi(text[2:]); err == nil && onDelay != nil {
@@ -341,6 +358,10 @@ type controlLayout struct {
 	Y      float64 `json:"y"`
 	Size   float64 `json:"size"`
 	Hidden bool    `json:"hidden"`
+	// The right stick only: Aim is "stick" or "swipe", which aims by moving
+	// the mouse at Speed percent.
+	Aim   string  `json:"aim,omitempty"`
+	Speed float64 `json:"speed,omitempty"`
 }
 
 // layoutControls must match the controls the page draws.
@@ -357,6 +378,9 @@ func (l gamepadLayout) valid() bool {
 	inRange := func(v, low, high float64) bool { return !math.IsNaN(v) && v >= low && v <= high }
 	for id, c := range l.Controls {
 		if !layoutControls[id] || !inRange(c.X, 0, 100) || !inRange(c.Y, 0, 100) || !inRange(c.Size, 60, 160) {
+			return false
+		}
+		if (c.Aim != "" || c.Speed != 0) && (id != "rs" || (c.Aim != "stick" && c.Aim != "swipe") || !inRange(c.Speed, 25, 400)) {
 			return false
 		}
 	}

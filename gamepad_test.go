@@ -16,7 +16,13 @@ import (
 
 func startGamepadServer(t *testing.T, timeout time.Duration) (*recorder, string) {
 	t.Helper()
-	events := &recorder{}
+	events, _, url := startGamepadServerWithMouse(t, timeout)
+	return events, url
+}
+
+func startGamepadServerWithMouse(t *testing.T, timeout time.Duration) (*recorder, *recorder, string) {
+	t.Helper()
+	events, mouse := &recorder{}, &recorder{}
 	a := &app{
 		passcode:       []byte("secret"),
 		guard:          &loginGuard{failures: map[string]attempt{}},
@@ -24,10 +30,21 @@ func startGamepadServer(t *testing.T, timeout time.Duration) (*recorder, string)
 		openGamepad: func() (*gamepad, error) {
 			return &gamepad{out: events}, nil
 		},
+		openKeyboard: func() (*keyboard, error) {
+			return &keyboard{out: mouse, held: map[uint16]bool{}}, nil
+		},
 	}
 	server := httptest.NewServer(http.HandlerFunc(a.handleGamepad))
 	t.Cleanup(server.Close)
-	return events, "ws" + strings.TrimPrefix(server.URL, "http")
+	return events, mouse, "ws" + strings.TrimPrefix(server.URL, "http")
+}
+
+func TestGamepadSwipeMovesTheMouse(t *testing.T) {
+	events, mouse, url := startGamepadServerWithMouse(t, time.Minute)
+	conn := connect(t, url, "secret")
+	send(t, conn, "m 12 0", "m 0 -5", "m 99999 0", "m 1", "g 1 0 0 0 0 0 0")
+	events.waitFor(t, "down a")
+	mouse.waitFor(t, "rel 0 12", "rel 1 -5", "rel 0 500")
 }
 
 func TestParsePadState(t *testing.T) {
@@ -130,7 +147,7 @@ func TestGamepadLayoutSaveAndRead(t *testing.T) {
 		t.Errorf("empty layout = %s", got)
 	}
 
-	body := `{"version":1,"controls":{"a":{"x":80,"y":60,"size":120,"hidden":false},"l3":{"x":10,"y":10,"size":100,"hidden":true}}}`
+	body := `{"version":1,"controls":{"a":{"x":80,"y":60,"size":120,"hidden":false},"l3":{"x":10,"y":10,"size":100,"hidden":true},"rs":{"x":64,"y":75,"size":100,"hidden":false,"aim":"swipe","speed":150}}}`
 	w := httptest.NewRecorder()
 	a.handleLayoutSave(w, httptest.NewRequest("POST", "/", strings.NewReader(body)))
 	if w.Code != http.StatusOK {
@@ -152,6 +169,11 @@ func TestGamepadLayoutRejects(t *testing.T) {
 		`{"version":1,"controls":{"zz":{"x":1,"y":1,"size":100}}}`,
 		`{"version":1,"controls":{"a":{"x":101,"y":1,"size":100}}}`,
 		`{"version":1,"controls":{"a":{"x":1,"y":1,"size":20}}}`,
+		`{"version":1,"controls":{"a":{"x":1,"y":1,"size":100,"aim":"swipe","speed":100}}}`,
+		`{"version":1,"controls":{"rs":{"x":1,"y":1,"size":100,"aim":"gyro","speed":100}}}`,
+		`{"version":1,"controls":{"rs":{"x":1,"y":1,"size":100,"aim":"swipe","speed":1000}}}`,
+		`{"version":1,"controls":{"rs":{"x":1,"y":1,"size":100,"aim":"swipe"}}}`,
+		`{"version":1,"controls":{"rs":{"x":1,"y":1,"size":100,"speed":100}}}`,
 		`not json`,
 		`{"version":1,"controls":{"a":{"x":1,"y":1,"size":100,"pad":"` + strings.Repeat("x", 9000) + `"}}}`,
 	} {
