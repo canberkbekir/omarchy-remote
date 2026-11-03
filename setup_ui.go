@@ -48,6 +48,7 @@ const (
 	stageParty
 	stagePasscode
 	stagePasscodeEntry // typing a passcode of your own, part of the passcode step
+	stageUpdates
 	stageFirewall
 	stageReview
 )
@@ -96,9 +97,13 @@ func newWizard(s system, a answers) wizard {
 	return w
 }
 
-// steps are the numbered questions; the firewall one shows only when needed.
+// steps are the numbered questions; updates show only on Omarchy, and the
+// firewall only when needed.
 func (w wizard) steps() []stage {
 	steps := []stage{stageConnect, stageName, stageTheme, stageParty, stagePasscode}
+	if w.s.OmarchyHooks != "" {
+		steps = append(steps, stageUpdates)
+	}
 	if len(w.s.firewallBlocks(w.answers)) > 0 {
 		steps = append(steps, stageFirewall)
 	}
@@ -149,6 +154,8 @@ func (w wizard) currentValue() string {
 		return a.Theme
 	case stageParty:
 		return yesNo(a.Party)
+	case stageUpdates:
+		return yesNo(a.AutoUpdate)
 	case stageFirewall:
 		return yesNo(a.OpenFirewall)
 	case stagePasscode:
@@ -267,6 +274,8 @@ func (w wizard) pick(value string) (tea.Model, tea.Cmd) {
 		w.answers.Theme = value
 	case stageParty:
 		w.answers.Party = yes
+	case stageUpdates:
+		w.answers.AutoUpdate = yes
 	case stageFirewall:
 		w.answers.OpenFirewall = yes
 	case stagePasscode:
@@ -429,6 +438,18 @@ func (w wizard) question() question {
 				minPasscodeLength),
 		}
 
+	case stageUpdates:
+		return question{
+			title: "Update Omarchy Remote when you update Omarchy?",
+			why:   "omarchy update then gets the latest release too, and keeps your settings.",
+			more: "This adds a small script to " + tildePath(s.updateHookPath()) + ", which Omarchy runs after each update. " +
+				"It runs pc-remote update, which checks the download before installing it. You can always update by hand with pc-remote update.",
+			choices: []choice{
+				{value: "yes", title: "Yes, update together", tag: "recommended", desc: "Nothing else on your PC changes."},
+				{value: "no", title: "No", desc: "Run pc-remote update yourself."},
+			},
+		}
+
 	case stageFirewall:
 		ports := s.firewallBlocks(a)
 		what := "the app"
@@ -575,7 +596,7 @@ func (w wizard) stepBar() string {
 	st := w.st
 	steps := w.steps()
 	names := map[stage]string{stageConnect: "Connect", stageName: "Name", stageTheme: "Colors",
-		stageParty: "Party", stagePasscode: "Passcode", stageFirewall: "Firewall"}
+		stageParty: "Party", stagePasscode: "Passcode", stageUpdates: "Updates", stageFirewall: "Firewall"}
 	at := slices.Index(steps, w.step())
 	var parts []string
 	for i, s := range steps {
@@ -622,6 +643,13 @@ func (w wizard) review(width int) string {
 		passcode = "Made for you"
 	}
 	rows := [][2]string{{"Connect", connect}, {"Name", a.Name}, {"Colors", theme}, {"Party", party}, {"Passcode", passcode}}
+	if s.OmarchyHooks != "" {
+		updates := "By hand with pc-remote update"
+		if a.AutoUpdate {
+			updates = "With omarchy update"
+		}
+		rows = append(rows, [2]string{"Updates", updates})
+	}
 
 	var b strings.Builder
 	b.WriteString(indent(st.title.Render("Your choices"), 2) + "\n")

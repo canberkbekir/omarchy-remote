@@ -77,7 +77,7 @@ Either way, setup walks you through the rest:
 
 Run `pc-remote setup` again at any time to change your answers. It starts from your current settings.
 
-To update, run `pc-remote update`. It installs the latest release and restarts the app, and keeps your settings. In a clone, run `git pull && ./install.sh` instead. Versions before v0.1.3 don't have `update` yet, so run the install command above once more.
+To update, run `pc-remote update`. It installs the latest release and restarts the app, and keeps your settings. On Omarchy, setup also offers to do this for you after every `omarchy update`. In a clone, run `git pull && ./install.sh` instead. Versions before v0.1.3 don't have `update` yet, so run the install command above once more.
 
 **Commands**
 
@@ -340,6 +340,7 @@ New themes are welcome as pull requests: add `themes/<name>.css` with a screensh
 ```bash
 systemctl --user disable --now pc-remote-web
 rm ~/.config/systemd/user/pc-remote-web.service ~/.local/bin/pc-remote-web ~/.local/bin/pc-remote
+rm -f ~/.config/omarchy/hooks/post-update.d/omarchy-remote.hook   # updating along with Omarchy
 rm -r ~/.config/pc-remote   # your passcode, config, themes and gamepad layout
 ```
 

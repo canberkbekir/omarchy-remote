@@ -66,6 +66,9 @@ type system struct {
 	Pacman      bool
 	ServiceUnit bool // a pc-remote-web.service exists
 	Executable  string
+
+	OmarchyHooks string // ~/.config/omarchy/hooks; empty without Omarchy
+	UpdateHook   bool   // the post-update hook that runs pc-remote update is there
 }
 
 func (s system) missingPackages() []string {
@@ -95,6 +98,14 @@ func (s system) firewallBlocks(a answers) []int {
 		}
 	}
 	return blocked
+}
+
+// updateHookPath is the script omarchy update runs afterwards, or "" without Omarchy.
+func (s system) updateHookPath() string {
+	if s.OmarchyHooks == "" {
+		return ""
+	}
+	return filepath.Join(s.OmarchyHooks, "post-update.d", "omarchy-remote.hook")
 }
 
 func (s system) port() int { return s.Existing.Port }
@@ -142,6 +153,13 @@ func detectSystem(dir string) system {
 		s.HasPasscode = true
 	}
 	s.OmarchyTheme = omarchyThemeName()
+	if config, err := os.UserConfigDir(); err == nil {
+		if info, err := os.Stat(filepath.Join(config, "omarchy", "hooks")); err == nil && info.IsDir() {
+			s.OmarchyHooks = filepath.Join(config, "omarchy", "hooks")
+			_, err := os.Stat(s.updateHookPath())
+			s.UpdateHook = err == nil
+		}
+	}
 
 	s.LANAddress = lanAddress()
 	s.LANSubnet = subnetOf(s.LANAddress)

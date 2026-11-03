@@ -27,6 +27,7 @@ type answers struct {
 	Name         string
 	Theme        string
 	Party        bool
+	AutoUpdate   bool // update along with Omarchy
 }
 
 // defaultAnswers starts from the current settings, or the best guess for a new setup.
@@ -45,6 +46,8 @@ func defaultAnswers(s system) answers {
 			a.Theme = "omarchy"
 		}
 	}
+	// Turned on for a new setup; after that it stays as the owner left it.
+	a.AutoUpdate = s.OmarchyHooks != "" && (s.UpdateHook || !s.HasConfig)
 	a.OpenFirewall = true
 	return a
 }
@@ -104,6 +107,19 @@ func plan(s system, a answers) []action {
 			Run:   func() error { return savePasscode(s.Dir, a.Passcode) },
 		})
 	}
+	if hook := s.updateHookPath(); hook != "" && a.AutoUpdate != s.UpdateHook {
+		if a.AutoUpdate {
+			actions = append(actions, action{
+				Label: "Update Omarchy Remote whenever you run omarchy update",
+				Run:   func() error { return saveUpdateHook(hook, s.Executable) },
+			})
+		} else {
+			actions = append(actions, action{
+				Label: "Stop updating Omarchy Remote with omarchy update",
+				Run:   func() error { return os.Remove(hook) },
+			})
+		}
+	}
 	if !s.ServiceUnit {
 		actions = append(actions, action{
 			Label: "Add the background service",
@@ -115,6 +131,22 @@ func plan(s system, a answers) []action {
 		Run:   startService,
 	})
 	return actions
+}
+
+// saveUpdateHook adds a script that Omarchy runs after each omarchy update.
+func saveUpdateHook(path, executable string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	script := "#!/bin/bash\n" +
+		"# Added by pc-remote setup: updates Omarchy Remote after omarchy update.\n" +
+		"# To stop, run pc-remote setup again or delete this file.\n" +
+		"exec " + shellQuote(executable) + " update\n"
+	return os.WriteFile(path, []byte(script), 0o755)
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func sudo(argv ...string) func() error {

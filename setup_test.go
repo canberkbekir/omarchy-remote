@@ -418,3 +418,58 @@ func TestPlainHTTPNote(t *testing.T) {
 		t.Error("the note should show exactly when the home address is used")
 	}
 }
+
+func TestUpdateHook(t *testing.T) {
+	s := testSystem(t)
+	if a := defaultAnswers(s); a.AutoUpdate {
+		t.Error("offered updates without Omarchy")
+	}
+	if got := labels(plan(s, answers{Access: "lan", AutoUpdate: true})); slices.ContainsFunc(got, func(l string) bool { return strings.Contains(l, "omarchy update") }) {
+		t.Errorf("plan without Omarchy = %q", got)
+	}
+
+	s.OmarchyHooks = filepath.Join(t.TempDir(), "hooks")
+	s.Executable = "/home/me/it's/pc-remote-web"
+	a := defaultAnswers(s)
+	if !a.AutoUpdate {
+		t.Error("a new setup doesn't update with Omarchy")
+	}
+	if w := newWizard(s, a); !slices.Contains(w.steps(), stageUpdates) {
+		t.Errorf("steps = %v", w.steps())
+	}
+	for _, act := range plan(s, a) {
+		if strings.Contains(act.Label, "omarchy update") {
+			if err := act.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	data, err := os.ReadFile(s.updateHookPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(data), "exec '/home/me/it'\\''s/pc-remote-web' update\n") {
+		t.Errorf("hook = %q", data)
+	}
+
+	s.UpdateHook, s.HasConfig = true, true
+	if got := labels(plan(s, defaultAnswers(s))); slices.ContainsFunc(got, func(l string) bool { return strings.Contains(l, "omarchy update") }) {
+		t.Errorf("hook already there, plan = %q", got)
+	}
+	a.AutoUpdate = false
+	for _, act := range plan(s, a) {
+		if strings.HasPrefix(act.Label, "Stop updating") {
+			if err := act.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if _, err := os.Stat(s.updateHookPath()); !os.IsNotExist(err) {
+		t.Error("hook still there after turning it off")
+	}
+
+	s.UpdateHook = false
+	if defaultAnswers(s).AutoUpdate {
+		t.Error("turned back on for someone who said no")
+	}
+}
