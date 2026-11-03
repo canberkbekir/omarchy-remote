@@ -145,8 +145,9 @@ type app struct {
 	themes     *themes
 	passcode   []byte
 	guard      *loginGuard
-	trustProxy bool       // behind `tailscale serve`, so loopback connections are the proxy
-	ddc        sync.Mutex // Monitors handle one DDC/CI request at a time.
+	trustProxy bool            // behind `tailscale serve`, so loopback connections are the proxy
+	ddc        sync.Mutex      // Monitors handle one DDC/CI request at a time.
+	answered   map[string]bool // monitors that have reported a brightness; guarded by ddc
 
 	keyboardTimeout    time.Duration
 	openKeyboard       func() (*keyboard, error)
@@ -231,16 +232,99 @@ func listMonitors() ([]monitor, error) {
 	return monitors, nil
 }
 
-func readBrightness(name string) *int {
-	output, err := runCommand("pc-remote", "omarchy-brightness-display", "--monitor", name)
+// Some monitors drop DDC/CI requests now and then, so brightness reads and
+// writes are tried a few times, and a write counts only once it reads back.
+// Only monitors that have answered before are retried: one that never has,
+// like a TV without DDC/CI, gets a single try, so it stays quick to skip.
+var (
+	brightnessCommand  = runCommand
+	brightnessAttempts = 3
+	brightnessPause    = 200 * time.Millisecond
+)
+
+// retryBrightness waits before another attempt. One dropped request makes
+// Omarchy's DDC helper mark the monitor unavailable for a minute, so its
+// cache entry is cleared first; the helper finds the monitor again.
+func retryBrightness(name string) {
+	time.Sleep(brightnessPause)
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+		cacheName := strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_.-", r) {
+				return r
+			}
+			return '_'
+		}, name)
+		os.Remove(filepath.Join(dir, "omarchy-brightness-display-ddc", cacheName+".bus"))
+	}
+}
+
+// attempts says how many tries a monitor gets. Callers hold a.ddc.
+func (a *app) attempts(name string) int {
+	if a.answered[name] {
+		return brightnessAttempts
+	}
+	return 1
+}
+
+// readBrightnessOnce asks the monitor once. Callers hold a.ddc.
+func (a *app) readBrightnessOnce(name string) *int {
+	output, err := brightnessCommand("pc-remote", "omarchy-brightness-display", "--monitor", name)
 	if err != nil {
 		return nil
 	}
 	value, err := strconv.Atoi(strings.TrimSpace(output))
-	if err != nil {
+	if err != nil || value < 0 || value > 100 {
 		return nil
 	}
+	if a.answered == nil {
+		a.answered = map[string]bool{}
+	}
+	a.answered[name] = true
 	return &value
+}
+
+// readBrightness returns nil when the monitor doesn't answer. Callers hold a.ddc.
+func (a *app) readBrightness(name string) *int {
+	for attempt := range a.attempts(name) {
+		if attempt > 0 {
+			retryBrightness(name)
+		}
+		if value := a.readBrightnessOnce(name); value != nil {
+			return value
+		}
+	}
+	// Gone quiet, perhaps unplugged or swapped: one try until it answers again.
+	delete(a.answered, name)
+	return nil
+}
+
+// setBrightness reports whether the monitor took the brightness. Callers hold a.ddc.
+func (a *app) setBrightness(name string, target int) bool {
+	var previous *int
+	for attempt := range a.attempts(name) {
+		if attempt > 0 {
+			retryBrightness(name)
+		}
+		if _, err := brightnessCommand("pc-remote", "omarchy-brightness-display", "--no-osd", "--monitor", name, strconv.Itoa(target)+"%"); err != nil {
+			previous = nil
+			continue
+		}
+		got := a.readBrightnessOnce(name)
+		if got == nil {
+			previous = nil
+			continue
+		}
+		if max(*got-target, target-*got) <= 1 {
+			return true
+		}
+		// A display with few brightness steps lands on the nearest one; two
+		// writes in a row landing on the same value mean that's as close as it goes.
+		if previous != nil && *previous == *got {
+			return true
+		}
+		previous = got
+	}
+	return false
 }
 
 func nightlightEnabled() (bool, error) {
@@ -472,7 +556,7 @@ func (a *app) handleBrightnessRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range monitors {
-		monitors[i].Brightness = readBrightness(monitors[i].Name)
+		monitors[i].Brightness = a.readBrightness(monitors[i].Name)
 	}
 	writeJSON(w, http.StatusOK, monitors)
 }
@@ -501,8 +585,7 @@ func (a *app) handleBrightnessSet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Unknown monitor.")
 		return
 	}
-	target := strconv.Itoa(*body.Brightness) + "%"
-	if _, err := runCommand("pc-remote", "omarchy-brightness-display", "--no-osd", "--monitor", body.Monitor, target); err != nil {
+	if !a.setBrightness(body.Monitor, *body.Brightness) {
 		writeError(w, http.StatusInternalServerError, "The monitor didn’t respond.")
 		return
 	}
