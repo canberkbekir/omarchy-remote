@@ -68,7 +68,7 @@ cd omarchy-remote
 ./install.sh
 ```
 
-To update later, run `pc-remote update` (or `git pull && ./install.sh` in your clone). Either way, setup walks you through the rest:
+Either way, setup walks you through the rest:
 
 1. **A check of the PC.** Anything missing (like `playerctl` for the media controls) is named by the feature it affects, and setup offers to install it.
 2. **A few questions:** how your phone connects (same Wi-Fi, Tailscale or both), the name shown in the app, its colors, whether friends can join games, and the passcode: keep the current one (or have one made for you) or choose your own. Press `?` on a question for more detail.
@@ -76,6 +76,8 @@ To update later, run `pc-remote update` (or `git pull && ./install.sh` in your c
 4. **A QR code and the passcode.** Scan the code with your phone, tap **Share**, then **Add to Home Screen**, and open the new icon.
 
 Run `pc-remote setup` again at any time to change your answers. It starts from your current settings.
+
+To update, run `pc-remote update`. It installs the latest release and restarts the app, and keeps your settings. In a clone, run `git pull && ./install.sh` instead. Versions before v0.1.3 don't have `update` yet, so run the install command above once more.
 
 **Commands**
 
@@ -244,7 +246,7 @@ Use your own range: `ip -4 addr` shows it, for example `192.168.1.42/24` means `
 `pc-remote setup` writes the settings for you. They live in `~/.config/pc-remote/config.toml`, and you can also edit that file by hand. Every setting is optional, and without the file the app uses the defaults below.
 
 ```toml
-name   = "Studio PC"   # title at the top of the app (default: the computer's name)
+name   = "Studio PC"   # title at the top of the app (default: like "Alex's Desktop")
 theme  = "omarchy"     # see Themes below (default: "default")
 access = "tailscale"   # "lan", "tailscale" or "both" (default: "lan")
 port   = 8377
@@ -257,7 +259,7 @@ guest_port = 8378      # where friends join a party; 0 turns parties off
 | `tailscale` | this PC only (`127.0.0.1`) | you use `tailscale serve`, as described in [Security](#security) |
 | `both` | every network interface | you want both: home Wi-Fi for any phone, and `tailscale serve` for your own phone anywhere |
 
-Restart the service after changing the config: `systemctl --user restart pc-remote-web`. If a setting is misspelled, the service stops and `journalctl --user -u pc-remote-web` shows which one.
+Restart the service after changing the config: `systemctl --user restart pc-remote-web`. If a setting is misspelled, the service stops and `journalctl --user -u pc-remote-web` shows which one. `pc-remote setup` points out the mistake too, and if you start over it keeps the old file as `config.toml.bak`.
 
 For advanced setups, `listen = "100.64.0.1:8377"` (or the `PC_REMOTE_ADDR` environment variable) sets the exact address and overrides `access` and `port`.
 
