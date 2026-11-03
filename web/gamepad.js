@@ -51,6 +51,7 @@ function setupGamepad(options) {
   const PAD_H = 390;
   const PAD_SNAP = 8;
   const PAD_HELD_MS = 20;
+  const PAD_MOVE_MS = 4;
   const PAD_RESEND_MS = 250;
   // Delay is measured twice a second; the peak over the last 15 seconds shows
   // the stalls an average hides.
@@ -62,9 +63,6 @@ function setupGamepad(options) {
   const TAP_MOVE_PX = 12;
   const DOUBLE_TAP_MS = 350;
   const DOUBLE_TAP_PX = 60;
-  // While a stick is clicked (sprinting), 75% tilt counts as full, so a thumb
-  // drifting back a little doesn't drop the game out of sprint.
-  const SPRINT_TILT = 0.75;
   const PAD_BITS = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, back: 6, start: 7, home: 8, l3: 9, r3: 10 };
   const DPAD_BITS = { up: 11, down: 12, left: 13, right: 14 };
   const PAD_ICONS = {
@@ -81,11 +79,13 @@ function setupGamepad(options) {
     //   full   the share of travel that already counts as full tilt
     //   slack  how far past the edge, as a share of travel, the thumb can go and
     //          come back before the stick's center starts following it
+    //   sprint the share that counts as full while the stick is clicked
     // The left stick is for running: a thumb never holds the very edge, so it
-    // gets both. The right stick aims, where every bit of travel is precision
+    // gets both, and while sprinting a thumb drifting back a little doesn't
+    // drop the game out of sprint. The right stick aims, where every bit of travel is precision
     // and a fast turn must stop at once, so it gets neither, and a bigger base:
     // more travel means less wobble from an unsteady thumb.
-    { id: 'ls', name: 'Left stick', spoken: 'Left stick', kind: 'stick', w: 224, h: 306, x: 136, y: 221, base: 112, knob: 56, full: 0.9, slack: 1.35, hint: 'Touch anywhere' },
+    { id: 'ls', name: 'Left stick', spoken: 'Left stick', kind: 'stick', w: 224, h: 306, x: 136, y: 221, base: 112, knob: 56, full: 0.9, slack: 1.35, sprint: 0.75, hint: 'Touch anywhere' },
     { id: 'dpad', name: 'D-pad', spoken: 'D-pad', kind: 'dpad', w: 124, h: 124, x: 318, y: 300 },
     { id: 'back', name: 'Back', spoken: 'Back', icon: 'back', w: 44, h: 44, x: 374, y: 126, look: 'round' },
     { id: 'home', name: 'Home', spoken: 'Home', icon: 'home', w: 52, h: 52, x: 422, y: 118, look: 'round' },
@@ -121,7 +121,9 @@ function setupGamepad(options) {
   let padPing = null;
   let padDelay = null;
   let padSamples = [];
-  let padSent = 0;
+  let padHeld = null;
+  let padMoveSent = 0;
+  let padMoveTimer = 0;
   let padFlash = '';
   let padFlashTimer = null;
   const padPointers = new Map();
@@ -173,30 +175,50 @@ function setupGamepad(options) {
     for (const [dir, bit] of Object.entries(DPAD_BITS)) if (padDpad.dirs[dir]) bits |= 1 << bit;
     if (padSticks.ls?.click) bits |= 1 << PAD_BITS.l3;
     if (padSticks.rs?.click) bits |= 1 << PAD_BITS.r3;
-    const axes = (id) => {
+    const axes = (id, button) => {
       const stick = padSticks[id];
-      const travel = PAD_BY_ID[id].base / 2;
+      const control = PAD_BY_ID[id];
+      const travel = control.base / 2;
       const tilt = stick ? Math.hypot(stick.dx, stick.dy) / travel : 0;
       if (!tilt) return '0 0';
-      const k = (Math.min(tilt / (stick.click ? SPRINT_TILT : PAD_BY_ID[id].full), 1) / tilt / travel) * STICK_MAX;
+      const clicked = stick.click || held.has(button);
+      const full = clicked && control.sprint ? control.sprint : control.full;
+      const k = (Math.min(tilt / full, 1) / tilt / travel) * STICK_MAX;
       return `${Math.round(stick.dx * k)} ${Math.round(stick.dy * k)}`;
     };
     const trigger = (id) => (held.has(id) ? 255 : 0);
-    return `g ${bits} ${axes('ls')} ${axes('rs')} ${trigger('lt')} ${trigger('rt')}`;
+    return `g ${bits} ${axes('ls', 'l3')} ${axes('rs', 'r3')} ${trigger('lt')} ${trigger('rt')}`;
   }
 
-  // Every change goes out at once; the browser already delivers moves no faster
-  // than the screen draws.
+  // Presses and releases go out at once. Every state change passes through
+  // here, so it also keeps the PAD_HELD_MS timer running only while a control
+  // is held.
   function sendPad() {
-    if (!padReady) return;
-    padSocket.send(padMessage());
-    padSent = performance.now();
+    const held = padReady && padPointers.size > 0;
+    if (held && !padHeld) padHeld = setInterval(sendPad, PAD_HELD_MS);
+    if (!held && padHeld) {
+      clearInterval(padHeld);
+      padHeld = null;
+    }
+    if (padReady) padSocket.send(padMessage());
   }
 
-  // Runs every PAD_HELD_MS and resends if nothing went out for a while.
-  function resendPad() {
-    const wait = padPointers.size ? PAD_HELD_MS : PAD_RESEND_MS;
-    if (performance.now() - padSent >= wait - 5) sendPad();
+  // A move goes out at once too. Both thumbs' moves for one frame arrive within
+  // a millisecond or two, and frames are at least 8 ms apart, so a move that
+  // comes within PAD_MOVE_MS of the last send is folded into one send a moment
+  // later instead of adding a message.
+  function sendMove() {
+    const wait = padMoveSent + PAD_MOVE_MS - performance.now();
+    if (wait <= 0) {
+      padMoveSent = performance.now();
+      sendPad();
+    } else if (!padMoveTimer) {
+      padMoveTimer = setTimeout(() => {
+        padMoveTimer = 0;
+        padMoveSent = performance.now();
+        sendPad();
+      }, wait);
+    }
   }
 
   // Eight directions from where the finger is on the pad; the middle is neutral.
@@ -303,8 +325,8 @@ function setupGamepad(options) {
       const reach = travel * control.slack;
       if (Math.hypot(dx, dy) > reach) {
         const distance = Math.hypot(dx, dy);
-        stick.ox = Math.min(Math.max(p.x - (dx * reach) / distance, 0), control.w);
-        stick.oy = Math.min(Math.max(p.y - (dy * reach) / distance, 0), control.h);
+        stick.ox = p.x - (dx * reach) / distance;
+        stick.oy = p.y - (dy * reach) / distance;
         dx = p.x - stick.ox;
         dy = p.y - stick.oy;
       }
@@ -326,7 +348,7 @@ function setupGamepad(options) {
       return;
     }
     drawControl(control);
-    sendPad();
+    sendMove();
   }
 
   function padUp(control, event) {
@@ -518,7 +540,7 @@ function setupGamepad(options) {
     socket.onmessage = (event) => {
       if (event.data === 'ok') {
         padReady = true;
-        padResend = setInterval(resendPad, PAD_HELD_MS);
+        padResend = setInterval(sendPad, PAD_RESEND_MS);
         padPing = setInterval(() => socket.send(`t ${performance.now()}`), PAD_DELAY_MS);
         socket.send(`t ${performance.now()}`);
         sendPad();
@@ -526,8 +548,9 @@ function setupGamepad(options) {
         loadPadLayout();
       } else if (event.data.startsWith('t ')) {
         const ms = performance.now() - Number(event.data.slice(2));
+        // The first ping also pays for the connection warming up.
+        if (padDelay !== null) padSamples = [...padSamples.slice(1 - PAD_PEAK_SAMPLES), ms];
         padDelay = padDelay === null ? ms : padDelay * 0.7 + ms * 0.3;
-        padSamples = [...padSamples.slice(1 - PAD_PEAK_SAMPLES), ms];
         socket.send(`l ${Math.round(padDelay)}`);
         drawPadStatus();
       }
@@ -616,8 +639,29 @@ function setupGamepad(options) {
   });
   $('gp-size').addEventListener('input', (event) => updateSelected({ size: Number(event.target.value) }));
   $('gp-hide').addEventListener('click', () => updateSelected({ hidden: !padLayout[padSelected].hidden }));
-  // A touch on empty space on the left stick's half of the screen starts the
-  // left stick there, so a thumb landing just outside its area still moves.
+  // A touch on empty space whose nearest control is the left stick starts the
+  // stick there, so a thumb landing just outside its area still moves. A touch
+  // that just misses a button stays a miss.
+  function nearestControl(event) {
+    const p = toPad(event);
+    let best = null;
+    let bestDistance = Infinity;
+    for (const control of PAD_CONTROLS) {
+      if (padLayout[control.id].hidden) continue;
+      const center = padCenter(control);
+      const k = padScale(control.id);
+      const distance = Math.hypot(
+        Math.max(Math.abs(p.x - center.x) - (control.w * k) / 2, 0),
+        Math.max(Math.abs(p.y - center.y) - (control.h * k) / 2, 0),
+      );
+      if (distance < bestDistance) {
+        best = control;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
   $('gamepad').addEventListener('pointerdown', (event) => {
     if (event.target !== $('gamepad') && event.target !== $('gp-controls')) return;
     if (padEditing) {
@@ -625,11 +669,7 @@ function setupGamepad(options) {
       drawPad();
       return;
     }
-    const stick = PAD_BY_ID.ls;
-    const leftHalf = (x) => x < padSize.w / 2;
-    if (!padLayout.ls.hidden && !padSticks.ls && leftHalf(toPad(event).x) === leftHalf(padCenter(stick).x)) {
-      padDown(stick, padElements.get('ls'), event);
-    }
+    if (!padSticks.ls && nearestControl(event)?.id === 'ls') padDown(PAD_BY_ID.ls, padElements.get('ls'), event);
   });
   $('gamepad').addEventListener('contextmenu', (event) => event.preventDefault());
   landscape.addEventListener('change', () => {
