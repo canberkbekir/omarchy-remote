@@ -614,10 +614,19 @@ function setupGamepad(options) {
   });
   $('gp-size').addEventListener('input', (event) => updateSelected({ size: Number(event.target.value) }));
   $('gp-hide').addEventListener('click', () => updateSelected({ hidden: !padLayout[padSelected].hidden }));
+  // A touch on empty space on the left stick's half of the screen starts the
+  // left stick there, so a thumb landing just outside its area still moves.
   $('gamepad').addEventListener('pointerdown', (event) => {
-    if (padEditing && (event.target === $('gamepad') || event.target === $('gp-controls'))) {
+    if (event.target !== $('gamepad') && event.target !== $('gp-controls')) return;
+    if (padEditing) {
       padSelected = null;
       drawPad();
+      return;
+    }
+    const stick = PAD_BY_ID.ls;
+    const leftHalf = (x) => x < padSize.w / 2;
+    if (!padLayout.ls.hidden && !padSticks.ls && leftHalf(toPad(event).x) === leftHalf(padCenter(stick).x)) {
+      padDown(stick, padElements.get('ls'), event);
     }
   });
   $('gamepad').addEventListener('contextmenu', (event) => event.preventDefault());

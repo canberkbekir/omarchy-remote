@@ -167,7 +167,7 @@ To update, run `pc-remote update`. It installs the latest release and restarts t
 
 Open the **Game** tab and turn the phone sideways. The first time, the PC gets a virtual Xbox 360 controller named "PC Remote Gamepad". Steam and games that use SDL pick it up as a standard Xbox 360 controller, with no setup.
 
-- **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb. You can go a little past the edge and back without slowing down; further out the stick follows your thumb, so changing direction responds quickly. 90% tilt counts as full.
+- **Sticks float:** touch anywhere in a stick's area and the stick starts under your thumb. A touch on empty space on the left stick's half of the screen starts the left stick too. You can go a little past the edge and back without slowing down; further out the stick follows your thumb, so changing direction responds quickly. 90% tilt counts as full.
 - **L3 and R3:** tap a stick, then touch it again and hold. The stick stays clicked while it moves, so you can sprint or melee without letting go. While it's clicked, three quarters of the way out already counts as full tilt, so a thumb drifting back a little doesn't stop a sprint. The L3 and R3 buttons work too.
 - **D-pad:** slide between directions. The corners press two at once.
 - **Every finger counts:** move, aim, hold a trigger and press a face button at the same time.
