@@ -16,12 +16,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -61,6 +63,7 @@ type status struct {
 	Nightlight bool   `json:"nightlight"`
 	NowPlaying *track `json:"nowPlaying"`
 	Output     string `json:"output"`
+	Zooming    bool   `json:"zooming"` // the zoom lens is up
 }
 
 type monitor struct {
@@ -170,6 +173,8 @@ type app struct {
 	guestServer  *http.Server // runs only while a party does
 
 	phoneSeen atomic.Int64 // when a phone last polled the status, in Unix nanoseconds
+
+	pointer *pointer // the zoom lens
 }
 
 func loadPasscode(dir string) (string, error) {
@@ -452,6 +457,7 @@ func (a *app) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Name = a.name
 	s.Theme = a.themes.version()
+	s.Zooming = a.pointer.view().Zooming
 	writeJSON(w, http.StatusOK, s)
 }
 
@@ -659,7 +665,9 @@ func main() {
 		guestPort:       settings.GuestPort,
 		guestGuard:      &loginGuard{failures: map[string]attempt{}},
 		openGuestPad:    openVirtualGamepad,
+		pointer:         newPointer(dir),
 	}
+	a.pointer.restore()
 
 	syncBarPlugin()
 
@@ -690,6 +698,9 @@ func main() {
 	mux.HandleFunc("POST /api/type", a.auth(handleType))
 	mux.HandleFunc("GET /api/clipboard", a.auth(handleClipboardRead))
 	mux.HandleFunc("POST /api/clipboard", a.auth(handleClipboardWrite))
+	mux.HandleFunc("GET /api/pointer", a.auth(a.handlePointerRead))
+	mux.HandleFunc("POST /api/pointer", a.auth(a.handlePointerSave))
+	mux.HandleFunc("POST /api/pointer/zoom", a.auth(a.handleZoom))
 	mux.HandleFunc("GET /theme.css", look.handleTheme)
 	mux.HandleFunc("GET /user.css", look.handleUser)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
@@ -712,6 +723,14 @@ func main() {
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       time.Minute,
 	}
+	// A stop or restart closes the zoom lens and brings the cursor back.
+	go func() {
+		stop := make(chan os.Signal, 1)
+		signal.Notify(stop, syscall.SIGTERM, os.Interrupt)
+		<-stop
+		a.pointer.close()
+		os.Exit(0)
+	}()
 	log.Printf("Listening on %s", addr)
 	log.Fatal(server.ListenAndServe())
 }

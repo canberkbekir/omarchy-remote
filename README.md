@@ -40,7 +40,7 @@ One small Go binary on the PC, one web app on your Home Screen. No app store, no
 | --- | --- |
 | 🔊 **Control** | Volume and mute, pick the audio output, Now Playing with cover art and media keys, Lock, Reboot and Shut Down. |
 | 🖥️ **Display** | Turn the screens off, toggle the night light, set the brightness of all monitors at once or of each one. |
-| 🖱️ **Input** | Hold the phone upright for a trackpad, turn it sideways for a full keyboard. Type text into the PC and pass the clipboard both ways. |
+| 🖱️ **Input** | Hold the phone upright for a trackpad, turn it sideways for a full keyboard. Type text into the PC and pass the clipboard both ways. A zoom lens around the pointer. |
 | 🎮 **Game** | Turn sideways for a touch controller the PC sees as an Xbox 360 pad. Move, resize and hide every control. |
 | 🎉 **Party** | Friends on your Wi-Fi scan a QR code and join as players 2 to 4, with a controller and nothing else. |
 | 🎨 **Themes** | Follows your Omarchy theme live, or bring your own CSS. |
@@ -145,6 +145,10 @@ On Omarchy, setup offers a phone icon for the bar. It lights up while your phone
 **Type text** sends a whole sentence (emoji included) to the window that's active on the PC, with or without Enter.
 
 **Clipboard** shows what's copied on the PC so you can copy it to the phone, and sends text the other way.
+
+**Zoom** puts a magnifying circle around the pointer, handy on a TV across the room. It follows the pointer, clicks go through it, and it sharpens what it magnifies so text stays readable. The real cursor hides while it's up, and the lens shows where a click lands. It magnifies the window under the pointer, and closes when you leave the Input tab. Zoom needs Hyprland and Quickshell (`qs`, from the `quickshell` package).
+
+**The gear** at the top sets the lens size and how much it zooms (2× to 4×).
 
 </td>
   </tr>
@@ -278,6 +282,8 @@ guest_port = 8378      # where friends join a party; 0 turns parties off
 Restart the service after changing the config: `systemctl --user restart pc-remote-web`. If a setting is misspelled, the service stops and `journalctl --user -u pc-remote-web` shows which one. `pc-remote setup` points out the mistake too, and if you start over it keeps the old file as `config.toml.bak`.
 
 For advanced setups, `listen = "100.64.0.1:8377"` (or the `PC_REMOTE_ADDR` environment variable) sets the exact address and overrides `access` and `port`.
+
+The zoom settings from the gear in the app are saved in `~/.config/pc-remote/pointer.json`.
 
 The passcode is kept separately in `~/.config/pc-remote/passcode`, so you can share your config without sharing the passcode. Run `pc-remote setup` to choose your own passcode, or `pc-remote passcode --reset` to get a new random one.
 

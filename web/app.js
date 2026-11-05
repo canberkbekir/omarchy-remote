@@ -168,12 +168,12 @@ function openSheet(id) {
 }
 
 function closeSheets() {
-  ['output-scrim', 'type-scrim', 'clip-scrim', 'party-scrim'].forEach((id) => { $(id).hidden = true; });
+  ['output-scrim', 'type-scrim', 'clip-scrim', 'party-scrim', 'pointer-scrim'].forEach((id) => { $(id).hidden = true; });
   syncKeyboard();
 }
 
 function sheetOpen() {
-  return ['output-scrim', 'type-scrim', 'clip-scrim', 'party-scrim'].some((id) => !$(id).hidden);
+  return ['output-scrim', 'type-scrim', 'clip-scrim', 'party-scrim', 'pointer-scrim'].some((id) => !$(id).hidden);
 }
 
 // Swaps in fresh stylesheets when the theme or user.css changes on the PC.
@@ -224,6 +224,11 @@ function applyStatus(status) {
   $('pause-icon').toggleAttribute('hidden', !status.playing);
   drawTrack(status.nowPlaying);
   if (status.output) $('output-label').textContent = status.output;
+  if (!pointer) loadPointer();
+  else if (!changingZoom) {
+    pointer.zooming = status.zooming;
+    drawZoom();
+  }
 }
 
 function showOffline(offline) {
@@ -618,6 +623,11 @@ function connectKeyboard() {
     clearInterval(keyboardPing);
     keyboardSocket = null;
     keyboardReady = false;
+    // The PC closes the lens when the input connection ends.
+    if (pointer) {
+      pointer.zooming = false;
+      drawZoom();
+    }
     clearKeys();
     if (!inputWanted()) return;
     setKeyboardState('Reconnecting', false);
@@ -641,6 +651,104 @@ function closeKeyboard() {
   clearKeys();
   syncInput();
 }
+
+// The zoom lens. Its settings live on the PC; the gear in the header opens
+// them, and Zoom on the Input tab turns the lens on and off.
+let pointer = null;
+let pointerLoading = false;
+let pointerSaves = 0;
+let changingZoom = false;
+
+async function loadPointer() {
+  if (pointerLoading) return;
+  pointerLoading = true;
+  try {
+    pointer = await api('/api/pointer');
+    drawPointer();
+  } catch (error) {
+    handleError(error);
+  }
+  pointerLoading = false;
+}
+
+function drawPointer() {
+  $('pointer-button').hidden = !pointer.canZoom;
+  $('zoom-button').hidden = !pointer.canZoom;
+  $('input-actions').classList.toggle('three', pointer.canZoom);
+  document.querySelectorAll('.segments[data-setting]').forEach((group) => {
+    const value = String(pointer[group.dataset.setting]);
+    group.querySelectorAll('button').forEach((button) => button.setAttribute('aria-checked', String(button.dataset.value === value)));
+  });
+  drawZoom();
+}
+
+function drawZoom() {
+  const on = pointer.zooming;
+  $('zoom-button').classList.toggle('on', on);
+  $('zoom-button').setAttribute('aria-checked', String(on));
+  $('pad-card').classList.toggle('zooming', on);
+  $('zoom-chip').hidden = !on;
+  $('zoom-chip').textContent = `Zoom ${pointer.zoom}×`;
+}
+
+// Shows the change at once; only the newest answer from the PC is drawn.
+async function savePointer(change) {
+  Object.assign(pointer, change);
+  drawPointer();
+  const save = ++pointerSaves;
+  const { lens, zoom } = pointer;
+  try {
+    const saved = await api('/api/pointer', { lens, zoom });
+    if (save === pointerSaves) {
+      pointer = saved;
+      drawPointer();
+    }
+  } catch (error) {
+    handleError(error);
+    if (save === pointerSaves) loadPointer();
+  }
+}
+
+// A theme color as #rrggbb, whatever form the stylesheet wrote it in: a canvas
+// pixel turns hex, rgb(), oklch() or color-mix() into plain numbers.
+function themeHex(name) {
+  const probe = document.createElement('span');
+  probe.style.color = `var(${name})`;
+  document.body.append(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  context.fillStyle = color;
+  context.fillRect(0, 0, 1, 1);
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+  return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+}
+
+async function toggleZoom() {
+  const on = !pointer.zooming;
+  pointer.zooming = on;
+  drawZoom();
+  changingZoom = true;
+  try {
+    pointer = await api('/api/pointer/zoom', { on, ring: themeHex('--accent'), ground: themeHex('--ground') });
+  } catch (error) {
+    pointer.zooming = !on;
+    flash(error.message);
+  }
+  changingZoom = false;
+  drawPointer();
+}
+
+$('pointer-button').addEventListener('click', () => openSheet('pointer-scrim'));
+$('zoom-button').addEventListener('click', toggleZoom);
+document.querySelectorAll('.segments[data-setting]').forEach((group) => {
+  group.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    const value = button.dataset.value;
+    savePointer({ [group.dataset.setting]: group.dataset.setting === 'lens' ? value : Number(value) });
+  });
+});
 
 const MOVE_GAIN = 1.4;
 const MOVE_ACCELERATION = 0.09;

@@ -30,7 +30,10 @@
 <div class="screen" id="control" hidden>
   <header>
     <h1 id="pc-name">PC Remote</h1>
-    <p class="state" aria-live="polite"><span class="dot" id="dot" aria-hidden="true"></span><span id="state">Connecting</span></p>
+    <div class="header-end">
+      <p class="state" aria-live="polite"><span class="dot" id="dot" aria-hidden="true"></span><span id="state">Connecting</span></p>
+      <button class="icon-button" type="button" id="pointer-button" aria-label="Zoom settings" hidden><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
   </header>
 
   <div class="view" id="view-control">
@@ -125,9 +128,9 @@
   </div>
 
   <div class="view" id="view-input" hidden>
-    <div class="pad-card">
+    <div class="pad-card" id="pad-card">
       <div class="pad-top">
-        <button class="pad" type="button" id="pad" aria-label="Trackpad. Drag to move the pointer, tap to click, tap with two fingers to right click."><span id="pad-hint">Connecting</span><span class="pad-note">Turn sideways for the keyboard</span></button>
+        <button class="pad" type="button" id="pad" aria-label="Trackpad. Drag to move the pointer, tap to click, tap with two fingers to right click."><span class="zoom-chip" id="zoom-chip" hidden></span><span id="pad-hint">Connecting</span><span class="pad-note">Turn sideways for the keyboard</span></button>
         <button class="strip" type="button" id="strip" aria-label="Scroll strip. Drag up or down to scroll.">
           <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
           <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
@@ -138,7 +141,7 @@
         <button class="zone" type="button" data-button="btnright">Right click</button>
       </div>
     </div>
-    <div class="input-actions">
+    <div class="input-actions" id="input-actions">
       <button class="key" type="button" id="type-button">
         <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
         Type text
@@ -146,6 +149,10 @@
       <button class="key" type="button" id="clip-button">
         <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="4" rx="1"/><path d="M7 6H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1"/></svg>
         Clipboard
+      </button>
+      <button class="key" type="button" id="zoom-button" role="switch" aria-checked="false" hidden>
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+        Zoom
       </button>
     </div>
   </div>
@@ -210,6 +217,24 @@
     <h2 id="output-title">Audio output</h2>
     <div class="options" id="outputs"></div>
     <div class="choices"><button class="cancel" type="button" data-close>Close</button></div>
+  </section>
+</div>
+
+<div class="scrim" id="pointer-scrim" hidden>
+  <section class="sheet pointer" role="dialog" aria-modal="true" aria-labelledby="pointer-title">
+    <h2 id="pointer-title">Zoom lens</h2>
+    <div class="pointer-group" id="lens-group">
+      <div class="pointer-row">
+        <p class="pointer-label" id="lens-label">Lens size</p>
+        <div class="segments" role="radiogroup" aria-labelledby="lens-label" data-setting="lens"><button type="button" role="radio" data-value="small">Small</button><button type="button" role="radio" data-value="medium">Medium</button><button type="button" role="radio" data-value="large">Large</button></div>
+      </div>
+      <div class="pointer-row">
+        <p class="pointer-label" id="zoom-label">Zoom</p>
+        <div class="segments" role="radiogroup" aria-labelledby="zoom-label" data-setting="zoom"><button type="button" role="radio" data-value="2">2×</button><button type="button" role="radio" data-value="3">3×</button><button type="button" role="radio" data-value="4">4×</button></div>
+      </div>
+      <p class="pointer-hint">Turn the lens on with Zoom on the Input tab. It follows the pointer, and clicks go through it.</p>
+    </div>
+    <div class="choices one"><button class="cancel" type="button" data-close>Done</button></div>
   </section>
 </div>
 

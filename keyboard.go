@@ -305,6 +305,7 @@ func (a *app) handleKeyboard(w http.ResponseWriter, r *http.Request) {
 	a.startKeyboardSession(end)
 	device.releaseAll()
 	defer device.releaseAll()
+	defer a.pointer.endSession()
 
 	if err := conn.Write(session, websocket.MessageText, []byte("ok")); err != nil {
 		return

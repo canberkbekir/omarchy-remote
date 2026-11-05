@@ -80,6 +80,7 @@ func startKeyboardServer(t *testing.T, timeout time.Duration) (*recorder, string
 		passcode:        []byte("secret"),
 		guard:           &loginGuard{failures: map[string]attempt{}},
 		keyboardTimeout: timeout,
+		pointer:         testPointer(t, nil),
 		openKeyboard: func() (*keyboard, error) {
 			return &keyboard{out: events, held: map[uint16]bool{}}, nil
 		},

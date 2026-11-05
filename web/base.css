@@ -114,6 +114,22 @@ nav { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 
 .monitor.all { padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .input-actions { flex-shrink: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .input-actions .key { height: 52px; gap: 10px; font-size: 15px; font-weight: 500; }
+.input-actions.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.input-actions.three .key { gap: 6px; font-size: 14px; }
+.pad-card.zooming { border-color: var(--accent); }
+.zoom-chip { position: absolute; top: 14px; left: 14px; padding: 4px 10px; border-radius: 999px; background: var(--accent); color: var(--ground); font-family: var(--font); font-size: 12px; font-weight: 600; pointer-events: none; }
+.header-end { display: flex; align-items: center; gap: 12px; }
+.icon-button { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--soft); }
+.icon-button .i { width: 22px; height: 22px; }
+.sheet.pointer { gap: 16px; }
+.pointer-group { display: flex; flex-direction: column; gap: 12px; }
+.pointer-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.sheet .pointer-label { margin: 0; font-size: 16px; font-weight: 500; color: var(--ink); }
+.sheet .pointer-hint { margin: 4px 0 0; font-size: 13px; line-height: 1.4; color: var(--soft); }
+.segments { flex-shrink: 0; width: 204px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; background: var(--ground); border: 1px solid var(--line); border-radius: 14px; }
+.segments button { height: 40px; padding: 0; background: transparent; border: 0; border-radius: 10px; font-size: 14px; font-weight: 500; }
+.segments button[aria-checked="true"] { background: var(--accent); color: var(--ground); }
+.choices.one { grid-template-columns: minmax(0, 1fr); }
 .options { display: flex; flex-direction: column; gap: 8px; }
 .option { height: 56px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; background: transparent; border: 1px solid var(--line); border-radius: 16px; font-size: 16px; font-weight: 500; text-align: left; }
 .option[aria-pressed="true"] { background: var(--pressed); }

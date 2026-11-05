@@ -27,6 +27,7 @@ var features = []feature{
 	{"Screens and night light", []string{"hyprctl"}, "hyprland"},
 	{"Typing and clipboard", []string{"wtype", "wl-copy"}, "wtype wl-clipboard"},
 	{"Now Playing and media keys", []string{"playerctl"}, "playerctl"},
+	{"Zoom lens", []string{"qs"}, "quickshell"},
 }
 
 // check is one line of the system check.
