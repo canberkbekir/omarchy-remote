@@ -103,11 +103,11 @@ def server():
 
 def editor_text(editor):
     """Read the whole text of a Notepad editor: the classic Edit control or the
-    Windows 11 RichEdit document, whichever this machine has."""
+    Windows 11 RichEdit document, whichever this machine has. window_text() is
+    not used: on the Windows 11 document it returns the name "Text editor"."""
     for read in (
         lambda: editor.iface_value.CurrentValue,
         lambda: editor.iface_text.DocumentRange.GetText(-1),
-        editor.window_text,
     ):
         try:
             text = read()
@@ -161,7 +161,11 @@ def notepad(request):
     # Windows 11 Notepad can restore an old tab; start from an empty editor.
     pad.focus()
     keyboard.send_keys("^a{DELETE}")
-    wait_until(lambda: pad.text().strip("\r\n") == "", timeout=5, message="empty editor")
+    wait_until(
+        lambda: pad.text().strip("\r\n") == "",
+        timeout=5,
+        message=f"empty editor ({editor.element_info.control_type}, text {pad.text()!r})",
+    )
     yield pad
 
     report = getattr(request.node, "rep_call", None)
