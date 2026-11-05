@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+# Draft: see README.md before submitting.
+PackageIdentifier: canberkbekir.OmarchyRemote
+PackageVersion: 0.0.0
+PackageLocale: en-US
+Publisher: Canberk Bekiroglu
+PublisherUrl: https://github.com/canberkbekir
+PublisherSupportUrl: https://github.com/canberkbekir/omarchy-remote/issues
+Author: Canberk Bekiroglu
+PackageName: Omarchy Remote
+PackageUrl: https://github.com/canberkbekir/omarchy-remote
+License: MIT
+LicenseUrl: https://github.com/canberkbekir/omarchy-remote/blob/main/LICENSE
+ShortDescription: Your phone becomes a remote, a trackpad, a keyboard and a game controller for your PC.
+Description: |-
+  One small program on the PC and one web app on your phone's Home Screen.
+  Run `pc-remote-web setup` after installing to start it at sign-in, open the
+  firewall for your private network, and show the passcode QR code.
+Moniker: pc-remote
+Tags:
+  - remote
+  - trackpad
+  - keyboard
+  - gamepad
+  - media
+ReleaseNotesUrl: https://github.com/canberkbekir/omarchy-remote/releases/tag/v0.0.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
