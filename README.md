@@ -381,13 +381,15 @@ sudo tailscale serve --https=443 off
 
 ### Windows (preview)
 
-The server also builds for Windows. The trackpad, keyboard, typing, clipboard, volume, mute and media keys work. The rest of the app needs Linux for now: now playing, audio outputs, the screens, night light, brightness, power, the game controller and zoom.
+Windows 10 and 11 work too. The trackpad, keyboard, typing, clipboard, volume, mute, media keys, now playing, audio outputs, power, turning the screens off and brightness (DDC/CI monitors and laptop panels) work. The game controller, zoom and night light need Linux for now, and there's no tray icon yet.
 
-```bash
-GOOS=windows GOARCH=amd64 go build -o pc-remote-web.exe .
-```
+1. Download `pc-remote-windows-amd64.zip` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and unzip it into a folder you keep, like `%LOCALAPPDATA%\Programs\pc-remote`.
+2. In that folder, run `pc-remote-web.exe setup`. It adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (it asks for administrator rights for that step only), starts the server, and shows the passcode QR code.
+3. Scan the QR code with your phone.
 
-Run `pc-remote-web.exe` in your Windows session, not as a service, because a service can't reach the desktop. The passcode is in `%AppData%\pc-remote\passcode`, and `config.toml` goes in the same folder. On first run, allow the Windows Firewall prompt for private networks. Windows doesn't let it type into apps running as administrator unless `pc-remote-web.exe` runs as administrator too.
+Your network must be set to **Private** in Windows settings: the firewall blocks the phone on a Public network. `pc-remote-web.exe doctor` checks this and the rest of the setup. `pc-remote-web.exe update` installs the latest release and restarts the server.
+
+The server runs in your Windows session, not as a service, because a service can't reach the desktop. The passcode is in `%AppData%\pc-remote\passcode`, and `config.toml` goes in the same folder. Windows doesn't let it type into apps running as administrator unless `pc-remote-web.exe` runs as administrator too.
 
 ### Development
 
