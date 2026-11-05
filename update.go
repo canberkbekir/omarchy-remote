@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -84,14 +85,70 @@ func download(url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s: %s", url, resp.Status)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 128<<20))
+	return readAll(resp.Body, 128<<20)
+}
+
+// maxFileSize caps each file in a release; tests lower it.
+var maxFileSize int64 = 64 << 20
+
+// readAll reads r, failing instead of cutting it short past limit bytes.
+func readAll(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err == nil && int64(len(data)) > limit {
+		err = fmt.Errorf("the download is too big (over %d MB)", limit>>20)
+	}
+	return data, err
+}
+
+// checksumMatches reports whether a sha256sum listing has data's checksum
+// on the line for name.
+func checksumMatches(sums, name string, data []byte) bool {
+	sum := sha256.Sum256(data)
+	want := hex.EncodeToString(sum[:])
+	for _, line := range strings.Split(sums, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && strings.EqualFold(f[0], want) && strings.TrimPrefix(f[1], "*") == name {
+			return true
+		}
+	}
+	return false
+}
+
+// assetFor names the release archive for an OS and CPU.
+func assetFor(goos, goarch string) (string, error) {
+	switch {
+	case goos == "linux" && (goarch == "amd64" || goarch == "arm64"):
+		return "omarchy-remote-linux-" + goarch + ".tar.gz", nil
+	case goos == "windows" && goarch == "amd64":
+		return "pc-remote-windows-amd64.zip", nil
+	}
+	return "", fmt.Errorf("there's no release for %s/%s", goos, goarch)
+}
+
+// releaseAsset names the release archive for this PC.
+func releaseAsset() (string, error) { return assetFor(runtime.GOOS, runtime.GOARCH) }
+
+// archiveFolder is the folder inside an archive that holds the release.
+func archiveFolder(asset string) string {
+	return strings.TrimSuffix(strings.TrimSuffix(asset, ".tar.gz"), ".zip")
+}
+
+// serverFile is the server's file name in a release.
+func serverFile() string {
+	if runtime.GOOS == "windows" {
+		return "pc-remote-web.exe"
+	}
+	return "pc-remote-web"
 }
 
 // releaseFiles downloads a release for this PC, checks it against the
 // release's checksums, and returns the files in it by name.
 func releaseFiles(tag string) (map[string][]byte, error) {
-	name := "omarchy-remote-linux-" + runtime.GOARCH
-	archive, err := download(releases + "/download/" + tag + "/" + name + ".tar.gz")
+	name, err := releaseAsset()
+	if err != nil {
+		return nil, err
+	}
+	archive, err := download(releases + "/download/" + tag + "/" + name)
 	if err != nil {
 		return nil, err
 	}
@@ -99,16 +156,51 @@ func releaseFiles(tag string) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256(archive)
-	if !strings.Contains(string(sums), hex.EncodeToString(sum[:])+"  "+name+".tar.gz") {
+	if !checksumMatches(string(sums), name, archive) {
 		return nil, errors.New("the download doesn't match the release's checksum")
+	}
+	files, err := unpack(name, archive)
+	if err != nil {
+		return nil, err
+	}
+	if files[serverFile()] == nil {
+		return nil, errors.New("the release has no " + serverFile())
+	}
+	return files, nil
+}
+
+// unpack returns the regular files in the archive's release folder by name.
+// Anything else, like a path that climbs out of the folder, is skipped.
+func unpack(asset string, archive []byte) (map[string][]byte, error) {
+	folder := archiveFolder(asset)
+	files := map[string][]byte{}
+	if strings.HasSuffix(asset, ".zip") {
+		zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range zr.File {
+			if !f.Mode().IsRegular() || path.Dir(f.Name) != folder {
+				continue
+			}
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+			data, err := readAll(rc, maxFileSize)
+			rc.Close()
+			if err != nil {
+				return nil, err
+			}
+			files[path.Base(f.Name)] = data
+		}
+		return files, nil
 	}
 
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, err
 	}
-	files := map[string][]byte{}
 	r := tar.NewReader(gz)
 	for {
 		h, err := r.Next()
@@ -118,41 +210,23 @@ func releaseFiles(tag string) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if h.Typeflag != tar.TypeReg || path.Dir(h.Name) != name {
+		if h.Typeflag != tar.TypeReg || path.Dir(h.Name) != folder {
 			continue
 		}
-		if files[path.Base(h.Name)], err = io.ReadAll(io.LimitReader(r, 64<<20)); err != nil {
+		if files[path.Base(h.Name)], err = readAll(r, maxFileSize); err != nil {
 			return nil, err
 		}
-	}
-	if files["pc-remote-web"] == nil {
-		return nil, errors.New("the release has no pc-remote-web")
 	}
 	return files, nil
 }
 
-// replaceFile swaps in a new version of an executable. The running server
-// keeps the old one until it restarts.
-func replaceFile(path string, data []byte) error {
-	tmp := path + ".new"
-	if err := os.WriteFile(tmp, data, 0o755); err != nil {
-		return err
+// executable is this program's file; tests point it elsewhere.
+var executable = func() (string, error) {
+	exe, err := os.Executable()
+	if err == nil {
+		exe, err = filepath.EvalSymlinks(exe)
 	}
-	if err := os.Chmod(tmp, 0o755); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-// installRelease puts the release's programs in dir, next to the current ones.
-func installRelease(dir string, files map[string][]byte) error {
-	if err := replaceFile(filepath.Join(dir, "pc-remote-web"), files["pc-remote-web"]); err != nil {
-		return err
-	}
-	if helper := files["pc-remote"]; helper != nil {
-		return replaceFile(filepath.Join(dir, "pc-remote"), helper)
-	}
-	return nil
+	return exe, err
 }
 
 // writable reports whether files can be added to dir.
@@ -195,15 +269,16 @@ func runUpdate(args []string, out io.Writer) int {
 		return 0
 	}
 
-	exe, err := os.Executable()
-	if err == nil {
-		exe, err = filepath.EvalSymlinks(exe)
-	}
+	exe, err := executable()
 	if err != nil {
 		fmt.Fprintln(out, "Can't find this program:", err)
 		return 1
 	}
 	dir := filepath.Dir(exe)
+	if hint := packageManaged(exe); hint != "" {
+		fmt.Fprintln(out, hint)
+		return 1
+	}
 	if !writable(dir) {
 		fmt.Fprintf(out, "Can't write to %s, so this copy was likely installed by a package manager. Update it with that.\n", dir)
 		return 1
@@ -211,21 +286,9 @@ func runUpdate(args []string, out io.Writer) int {
 
 	fmt.Fprintf(out, "Downloading %s\n", latest)
 	files, err := releaseFiles(latest)
-	if err == nil {
-		err = installRelease(dir, files)
-	}
 	if err != nil {
 		fmt.Fprintln(out, st.bad.Render("✗")+" "+err.Error())
 		return 1
 	}
-	fmt.Fprintf(out, "%s Updated %s → %s in %s\n", st.good.Render("✓"), current, latest, tildePath(dir))
-	if _, err := runCommand("systemctl", "--user", "is-active", "--quiet", "pc-remote-web.service"); err != nil {
-		return 0
-	}
-	if _, err := runCommand("systemctl", "--user", "restart", "pc-remote-web.service"); err != nil {
-		fmt.Fprintln(out, "Restart the service to use it: systemctl --user restart pc-remote-web")
-		return 1
-	}
-	fmt.Fprintln(out, "Restarted the service. Phones reconnect on their own.")
-	return 0
+	return installUpdate(st, dir, current, latest, files, out)
 }

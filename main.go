@@ -613,6 +613,9 @@ func main() {
 	if code, handled := runCommandLine(os.Args[1:], os.Stdout); handled {
 		os.Exit(code)
 	}
+	if exe, err := executable(); err == nil {
+		removeOldFiles(exe)
+	}
 	dir, err := configDir()
 	if err != nil {
 		log.Fatal(err)

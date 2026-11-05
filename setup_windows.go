@@ -374,8 +374,18 @@ var stopWait = 5 * time.Second
 
 // restartTask stops the task and the server it started, waits until the old
 // server at addr stops answering, and starts the task again, so the server
-// reads the new settings. /End only stops conhost, not the server under it.
+// reads the new settings.
 func restartTask(addr string) error {
+	if err := stopTask(addr); err != nil {
+		return err
+	}
+	return startTask()
+}
+
+// stopTask stops the task and the server it started, and waits until the old
+// server at addr stops answering. /End only stops conhost, not the server
+// under it.
+func stopTask(addr string) error {
 	winRun("schtasks", "/End", "/TN", taskName) // fails when it isn't running
 	if err := stopServers(); err != nil {
 		return err
@@ -385,6 +395,10 @@ func restartTask(addr string) error {
 			return fmt.Errorf("another Omarchy Remote is still running on %s. Close it, then run %s setup again", addr, cliName)
 		}
 	}
+	return nil
+}
+
+func startTask() error {
 	if out, err := winRun("schtasks", "/Run", "/TN", taskName); err != nil {
 		return commandError(err, out)
 	}
