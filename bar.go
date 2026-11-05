@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -117,28 +116,6 @@ func removeBarPlugin(dir string) error {
 	return nil
 }
 
-// syncBarPlugin keeps an installed widget in step with this version, so an
-// update reaches the bar too. The shell reloads changed plugin files itself.
-func syncBarPlugin() {
-	dir, err := barPluginDir()
-	if err != nil {
-		return
-	}
-	if _, err := os.Stat(dir); err != nil {
-		return
-	}
-	executable, err := os.Executable()
-	if err == nil {
-		executable, err = filepath.EvalSymlinks(executable)
-	}
-	if err != nil {
-		return
-	}
-	if _, err := writeBarPlugin(dir, executable); err != nil {
-		fmt.Fprintln(os.Stderr, "updating the bar widget:", err)
-	}
-}
-
 type presence struct {
 	Phone bool      `json:"phone"`
 	Party partyView `json:"party"`
@@ -146,8 +123,14 @@ type presence struct {
 
 // handlePresence tells the bar widget whether a phone is using the app.
 func (a *app) handlePresence(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, a.presence())
+}
+
+// presence is whether a phone uses the app and how the party stands, for the
+// bar widget and the Windows tray icon.
+func (a *app) presence() presence {
 	seen := time.Unix(0, a.phoneSeen.Load())
-	writeJSON(w, http.StatusOK, presence{Phone: time.Since(seen) < phoneTimeout, Party: a.party.view()})
+	return presence{Phone: time.Since(seen) < phoneTimeout, Party: a.party.view()}
 }
 
 // barStatus is what `pc-remote status --json` prints for the widget.
@@ -168,14 +151,11 @@ type barStatus struct {
 
 // askPresence asks the running server, the way the phone does.
 func askPresence(c config, passcode string) (presence, error) {
-	host, port, err := net.SplitHostPort(c.listenAddr())
+	base, err := localURL(c.listenAddr())
 	if err != nil {
 		return presence{}, err
 	}
-	if ip := net.ParseIP(host); host == "" || ip != nil && ip.IsUnspecified() {
-		host = "127.0.0.1"
-	}
-	req, err := http.NewRequest("GET", "http://"+net.JoinHostPort(host, port)+"/api/presence", nil)
+	req, err := http.NewRequest("GET", base+"/api/presence", nil)
 	if err != nil {
 		return presence{}, err
 	}
@@ -229,11 +209,7 @@ func runStatus(args []string, out io.Writer) int {
 		}
 	}
 	if *connect && configured {
-		s := system{Dir: dir, Existing: c, LANAddress: lanAddress()}
-		if viaTailscale(c.Access) {
-			s.TailscaleName, _ = tailscaleName()
-		}
-		first := appAddresses(s, answers{Access: c.Access})[0]
+		first := connectAddress(dir, c)
 		st.Name, st.Label, st.URL, st.QR = c.Name, first.label, first.url, qrRows(first.url)
 	}
 

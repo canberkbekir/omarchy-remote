@@ -403,6 +403,30 @@ func (a *app) handlePartyRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
+var (
+	errPartiesOff = errors.New("parties are turned off")
+	errGuestPort  = errors.New("couldn't open the guest port")
+)
+
+// startParty opens the guest port and starts a party, for the phone and the
+// tray menu.
+func (a *app) startParty() error {
+	if a.guestPort == 0 {
+		return errPartiesOff
+	}
+	if err := a.startGuestServer(); err != nil {
+		log.Printf("opening guest port: %v", err)
+		return errGuestPort
+	}
+	return a.party.start()
+}
+
+// endParty removes every guest and closes the guest port.
+func (a *app) endParty() {
+	a.party.end()
+	a.stopGuestServer()
+}
+
 func (a *app) handlePartyChange(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Action string `json:"action"`
@@ -413,16 +437,14 @@ func (a *app) handlePartyChange(w http.ResponseWriter, r *http.Request) {
 	}
 	switch body.Action {
 	case "start":
-		if a.guestPort == 0 {
+		switch err := a.startParty(); {
+		case errors.Is(err, errPartiesOff):
 			writeError(w, http.StatusConflict, "Parties are turned off in config.toml.")
 			return
-		}
-		if err := a.startGuestServer(); err != nil {
-			log.Printf("opening guest port: %v", err)
+		case errors.Is(err, errGuestPort):
 			writeError(w, http.StatusInternalServerError, "Couldn’t open the guest port.")
 			return
-		}
-		if err := a.party.start(); err != nil {
+		case err != nil:
 			writeError(w, http.StatusInternalServerError, "Couldn’t start the party.")
 			return
 		}
@@ -434,8 +456,7 @@ func (a *app) handlePartyChange(w http.ResponseWriter, r *http.Request) {
 	case "remove":
 		a.party.remove(body.Slot)
 	case "end":
-		a.party.end()
-		a.stopGuestServer()
+		a.endParty()
 	default:
 		writeError(w, http.StatusBadRequest, "Bad request.")
 		return

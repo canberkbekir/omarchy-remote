@@ -63,3 +63,11 @@ func TestBarStep(t *testing.T) {
 		t.Errorf("plan = %q", got)
 	}
 }
+
+func TestPresenceMatchesHandler(t *testing.T) {
+	a := &app{party: newParty()}
+	a.phoneSeen.Store(time.Now().UnixNano())
+	if p := a.presence(); !p.Phone || p.Party.Active {
+		t.Errorf("presence() = %+v", p)
+	}
+}

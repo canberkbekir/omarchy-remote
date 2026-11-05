@@ -12,6 +12,7 @@ import (
 	"log"
 	"math/big"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -194,6 +195,9 @@ type app struct {
 	phoneSeen atomic.Int64 // when a phone last polled the status, in Unix nanoseconds
 
 	pointer *pointer // the zoom lens
+
+	tickets        *connectTickets // the tray's one-time links to the passcode page
+	connectAddress func() address
 }
 
 func loadPasscode(dir string) (string, error) {
@@ -654,10 +658,10 @@ func main() {
 		guestGuard:      &loginGuard{failures: map[string]attempt{}},
 		openGuestPad:    openVirtualGamepad,
 		pointer:         newPointer(dir),
+		tickets:         newConnectTickets(),
+		connectAddress:  func() address { return connectAddress(dir, settings) },
 	}
 	a.pointer.restore()
-
-	syncBarPlugin()
 
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
 		log.Fatal(err)
@@ -678,6 +682,7 @@ func main() {
 	mux.HandleFunc("POST /api/gamepad/layout", a.auth(a.handleLayoutSave))
 	mux.HandleFunc("GET /api/party", a.auth(a.handlePartyRead))
 	mux.HandleFunc("GET /api/presence", a.auth(a.handlePresence))
+	mux.HandleFunc("POST /api/connect", a.handleConnect)
 	mux.HandleFunc("POST /api/party", a.auth(a.handlePartyChange))
 	mux.HandleFunc("GET /api/art", a.auth(handleArt))
 	mux.HandleFunc("GET /api/outputs", a.auth(handleOutputs))
@@ -716,9 +721,17 @@ func main() {
 		stop := make(chan os.Signal, 1)
 		signal.Notify(stop, syscall.SIGTERM, os.Interrupt)
 		<-stop
+		closeDesktopIntegration()
 		a.pointer.close()
 		os.Exit(0)
 	}()
+	// Listen before showing the tray icon, so a second copy that can't get
+	// the port exits without leaving an icon behind.
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	desktopIntegration(a, addr)
 	log.Printf("Listening on %s", addr)
-	log.Fatal(server.ListenAndServe())
+	log.Fatal(server.Serve(listener))
 }
