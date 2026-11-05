@@ -19,6 +19,14 @@ const (
 // audioOutputsAvailable says whether the PC can list and switch sound outputs.
 const audioOutputsAvailable = true
 
+// platformFeatures: everything the phone offers works on Linux.
+func platformFeatures() featureSet {
+	return featureSet{
+		Power: true, Screens: true, Nightlight: true, Brightness: true, Outputs: true,
+		NowPlaying: true, Gamepad: true, Zoom: true, Party: true,
+	}
+}
+
 var mediaCommands = map[string][]string{
 	"previous": {"playerctl", "previous"},
 	"toggle":   {"playerctl", "play-pause"},

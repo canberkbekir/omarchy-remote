@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -22,6 +21,12 @@ const mediaMissing = "Media keys are not available."
 // audioOutputsAvailable says whether the PC can list and switch sound
 // outputs. Windows has no public API for switching, so the list stays empty.
 const audioOutputsAvailable = false
+
+// platformFeatures: only volume, media keys, input, typing and the clipboard work on
+// Windows so far. Each port step turns its feature on here.
+func platformFeatures() featureSet {
+	return featureSet{Outputs: audioOutputsAvailable}
+}
 
 const (
 	vkReturn         = 0x0D
@@ -111,6 +116,7 @@ const (
 	clsctxAll = 0x17
 	eRender   = 0
 	eConsole  = 0
+	eNotFound = 0x80070490 // HRESULT_FROM_WIN32(ERROR_NOT_FOUND): no output device
 
 	// Vtable slots, counting IUnknown's three.
 	slotRelease                    = 2
@@ -161,11 +167,11 @@ func withSpeakers(fn func(volume *comObject) error) error {
 	var device *comObject
 	hr, _, _ = syscall.SyscallN(enumerator.method(slotGetDefaultAudioEndpoint),
 		uintptr(unsafe.Pointer(enumerator)), eRender, eConsole, uintptr(unsafe.Pointer(&device)))
+	if uint32(hr) == eNotFound || (hr == 0 && device == nil) {
+		return errNoSpeakers
+	}
 	if err := hresult(hr); err != nil {
 		return err
-	}
-	if device == nil {
-		return errors.New("no sound output")
 	}
 	defer device.release()
 

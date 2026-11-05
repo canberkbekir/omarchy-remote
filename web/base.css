@@ -23,6 +23,7 @@
 html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; background: var(--ground); }
 body { color: var(--ink); font-family: var(--font); touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 [hidden] { display: none !important; }
+[data-off] { display: none !important; }
 h1, h2, p { margin: 0; }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:active:not(:disabled) { transform: scale(.97); }
@@ -91,7 +92,7 @@ h2 { font-family: var(--mono); font-size: 13px; font-weight: 400; color: var(--s
 .k.down { background: var(--accent); border-color: var(--accent); color: var(--ground); }
 .k.latched { border-color: var(--accent); color: var(--accent); }
 
-nav { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 -20px; padding: 8px 20px 0; border-top: 1px solid var(--line); }
+nav { flex-shrink: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin: 0 -20px; padding: 8px 20px 0; border-top: 1px solid var(--line); }
 .tab { height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: transparent; border: 0; border-radius: 12px; color: var(--soft); font-size: 11px; font-weight: 500; }
 .tab[aria-current="page"] { background: var(--panel); color: var(--ink); }
 

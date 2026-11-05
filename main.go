@@ -58,7 +58,26 @@ type status struct {
 	NowPlaying *track `json:"nowPlaying"`
 	Output     string `json:"output"`
 	Zooming    bool   `json:"zooming"` // the zoom lens is up
+	// Features says which controls this PC supports, so the phone hides the rest.
+	Features featureSet `json:"features"`
 }
+
+// featureSet lists the controls that work on this OS. Each OS fills it in platformFeatures().
+type featureSet struct {
+	Power      bool `json:"power"`
+	Screens    bool `json:"screens"`
+	Nightlight bool `json:"nightlight"`
+	Brightness bool `json:"brightness"`
+	Outputs    bool `json:"outputs"`
+	NowPlaying bool `json:"nowPlaying"`
+	Gamepad    bool `json:"gamepad"`
+	Zoom       bool `json:"zoom"`
+	Party      bool `json:"party"`
+}
+
+// errNoSpeakers means the PC has no sound output at all, such as a server or
+// a CI machine. The status still works then; it shows volume 0.
+var errNoSpeakers = errors.New("no sound output")
 
 type monitor struct {
 	Name       string `json:"name"`
@@ -343,10 +362,10 @@ func nightlightEnabled() (bool, error) {
 
 func readStatus() (status, error) {
 	volume, muted, err := readVolume()
-	if err != nil {
+	if err != nil && !errors.Is(err, errNoSpeakers) {
 		return status{}, err
 	}
-	s := status{Volume: volume, Muted: muted}
+	s := status{Volume: volume, Muted: muted, Features: platformFeatures()}
 	if mediaAvailable() {
 		s.Media = true
 		s.NowPlaying = nowPlaying()

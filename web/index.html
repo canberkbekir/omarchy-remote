@@ -32,7 +32,7 @@
     <h1 id="pc-name">PC Remote</h1>
     <div class="header-end">
       <p class="state" aria-live="polite"><span class="dot" id="dot" aria-hidden="true"></span><span id="state">Connecting</span></p>
-      <button class="icon-button" type="button" id="pointer-button" aria-label="Zoom settings" hidden><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="icon-button" type="button" id="pointer-button" data-feature="zoom" aria-label="Zoom settings" hidden><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
   </header>
 
@@ -54,7 +54,7 @@
         <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
       </button>
     </div>
-    <button class="key wide" type="button" id="output-button" aria-label="Choose audio output">
+    <button class="key wide" type="button" id="output-button" data-feature="outputs" aria-label="Choose audio output">
       <span>
         <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4z"/><path d="M16 9a4.5 4.5 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></svg>
         <span id="output-label">Audio output</span>
@@ -64,7 +64,7 @@
   </section>
 
   <section aria-label="Media">
-    <div class="track">
+    <div class="track" data-feature="nowPlaying">
       <img class="art" id="art" alt="" hidden>
       <div class="art" id="art-empty" aria-hidden="true"></div>
       <div class="track-text">
@@ -72,7 +72,7 @@
         <p class="track-sub" id="track-sub"></p>
       </div>
     </div>
-    <div class="progress" aria-hidden="true"><span id="progress"></span></div>
+    <div class="progress" aria-hidden="true" data-feature="nowPlaying"><span id="progress"></span></div>
     <div class="row">
       <button class="key" type="button" data-media="previous" aria-label="Previous track">
         <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6v12l-9-6 9-6z"/><path d="M6 6v12"/></svg>
@@ -88,7 +88,7 @@
     <p class="note" id="media-note" hidden>Media buttons need playerctl on the PC.</p>
   </section>
 
-  <section aria-label="Power">
+  <section aria-label="Power" data-feature="power">
     <h2>Power</h2>
     <div class="row">
       <button class="key tall" type="button" id="lock">
@@ -110,18 +110,18 @@
   <div class="view top" id="view-display" hidden>
     <section aria-label="Screens">
       <div class="row two">
-        <button class="key tall" type="button" id="screens" aria-pressed="false">
+        <button class="key tall" type="button" id="screens" data-feature="screens" aria-pressed="false">
           <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M9 21h6"/><path d="M12 17v4"/></svg>
           <span id="screens-label">Screens off</span>
         </button>
-        <button class="key tall" type="button" id="night" role="switch" aria-checked="false">
+        <button class="key tall" type="button" id="night" data-feature="nightlight" role="switch" aria-checked="false">
           <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
           Night light
         </button>
       </div>
     </section>
 
-    <section aria-label="Brightness">
+    <section aria-label="Brightness" data-feature="brightness">
       <h2>Brightness</h2>
       <div class="monitors" id="monitors"></div>
     </section>
@@ -150,7 +150,7 @@
         <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="4" rx="1"/><path d="M7 6H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1"/></svg>
         Clipboard
       </button>
-      <button class="key" type="button" id="zoom-button" role="switch" aria-checked="false" hidden>
+      <button class="key" type="button" id="zoom-button" data-feature="zoom" role="switch" aria-checked="false" hidden>
         <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
         Zoom
       </button>
@@ -170,7 +170,7 @@
       <button class="key" type="button" id="game-open">Open controller</button>
       <p class="game-note">For when rotation lock is on</p>
     </section>
-    <button class="invite" type="button" id="invite"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg><span id="invite-label">Invite players</span></button>
+    <button class="invite" type="button" id="invite" data-feature="party"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg><span id="invite-label">Invite players</span></button>
     <div class="game-stats">
       <div class="stat"><p>Controller</p><p class="stat-value" id="game-player">Connecting</p></div>
       <div class="stat"><p>Delay</p><p class="stat-value" id="game-delay">–</p></div>
@@ -182,7 +182,7 @@
       <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10"/><path d="M18 8h2"/><circle cx="16" cy="8" r="2"/><path d="M4 16h2"/><path d="M10 16h10"/><circle cx="8" cy="16" r="2"/></svg>
       Control
     </button>
-    <button class="tab" type="button" id="tab-display">
+    <button class="tab" type="button" id="tab-display" data-feature="screens nightlight brightness">
       <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2"/><path d="M12 19v2"/><path d="M3 12h2"/><path d="M19 12h2"/><path d="m5.6 5.6 1.4 1.4"/><path d="m17 17 1.4 1.4"/><path d="m5.6 18.4 1.4-1.4"/><path d="m17 7 1.4-1.4"/></svg>
       Display
     </button>
@@ -190,7 +190,7 @@
       <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 15h16"/><path d="M12 15v5"/></svg>
       Input
     </button>
-    <button class="tab" type="button" id="tab-game">
+    <button class="tab" type="button" id="tab-game" data-feature="gamepad">
       <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 11h4"/><path d="M8 9v4"/><path d="M15 12h.01"/><path d="M18 10h.01"/><path d="M17.32 5H6.68a4 4 0 0 0-3.98 3.59C2.6 9.42 2 14.46 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.41-1.41A2 2 0 0 1 9.83 16h4.34a2 2 0 0 1 1.41.59L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.55-.6-6.58-.69-7.26A4 4 0 0 0 17.32 5z"/></svg>
       Game
     </button>

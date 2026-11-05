@@ -205,8 +205,21 @@ function syncThemeColor() {
   if (ground) document.querySelector('meta[name="theme-color"]').content = ground;
 }
 
+// applyFeatures hides the controls this PC can't run. An element lists its
+// features in data-feature and shows when any of them works. A server too old
+// to send features gets every control.
+function applyFeatures(features) {
+  document.querySelectorAll('[data-feature]').forEach((element) => {
+    const on = !features || element.dataset.feature.split(' ').some((name) => features[name]);
+    element.toggleAttribute('data-off', !on);
+  });
+  const open = ['display', 'game'].find((view) => !$(`view-${view}`).hidden);
+  if (open && $(`tab-${open}`).hasAttribute('data-off')) showView('control');
+}
+
 function applyStatus(status) {
   if (status.name) $('pc-name').textContent = status.name;
+  applyFeatures(status.features);
   applyTheme(status.theme);
   if (!dragging && !sendingVolume) {
     volume = status.volume;
