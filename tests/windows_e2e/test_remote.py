@@ -86,3 +86,30 @@ def test_volume(server):
         assert body["volume"] == 30
     finally:
         server.call("POST", "/api/volume", {"volume": status["volume"]})
+
+
+def active_output(outputs):
+    return next((o["name"] for o in outputs if o["active"]), None)
+
+
+def test_outputs_switch(server):
+    code, outputs = server.call("GET", "/api/outputs")
+    assert code == 200, outputs
+    if len(outputs) < 2:
+        pytest.skip("fewer than two audio endpoints on this machine")
+    before = active_output(outputs)
+    target = next(o for o in outputs if o["name"] != before)
+    try:
+        code, body = server.call("POST", "/api/output", {"name": target["name"]})
+        assert code == 200, body
+        assert active_output(body) == target["name"]
+        code, status = server.call("GET", "/api/status")
+        assert status["output"] == target["label"]
+    finally:
+        if before:
+            server.call("POST", "/api/output", {"name": before})
+
+
+def test_output_unknown(server):
+    code, body = server.call("POST", "/api/output", {"name": "nope"})
+    assert code == 400, body

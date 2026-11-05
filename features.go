@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"hash/fnv"
 	"io"
@@ -167,33 +166,6 @@ func outputLabel(description string) string {
 	return description
 }
 
-func listOutputs() ([]output, error) {
-	if !audioOutputsAvailable {
-		return []output{}, nil
-	}
-	text, err := runCommand("pactl", "-f", "json", "list", "sinks")
-	if err != nil {
-		return nil, err
-	}
-	var sinks []struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	if err := json.Unmarshal([]byte(text), &sinks); err != nil {
-		return nil, err
-	}
-	current, err := runCommand("pactl", "get-default-sink")
-	if err != nil {
-		return nil, err
-	}
-	current = strings.TrimSpace(current)
-	outputs := make([]output, len(sinks))
-	for i, sink := range sinks {
-		outputs[i] = output{Name: sink.Name, Label: outputLabel(sink.Description), Active: sink.Name == current}
-	}
-	return outputs, nil
-}
-
 func handleOutputs(w http.ResponseWriter, r *http.Request) {
 	outputs, err := listOutputs()
 	if err != nil {
@@ -219,7 +191,7 @@ func handleOutput(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Unknown audio output.")
 		return
 	}
-	if _, err := runCommand("pactl", "set-default-sink", body.Name); err != nil {
+	if err := setOutput(body.Name); err != nil {
 		writeError(w, http.StatusInternalServerError, "Command failed.")
 		return
 	}

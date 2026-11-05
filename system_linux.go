@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"os/exec"
@@ -16,15 +17,41 @@ const (
 	mediaMissing = "playerctl is not installed."
 )
 
-// audioOutputsAvailable says whether the PC can list and switch sound outputs.
-const audioOutputsAvailable = true
-
 // platformFeatures: everything the phone offers works on Linux.
 func platformFeatures() featureSet {
 	return featureSet{
 		Power: true, Screens: true, Nightlight: true, Brightness: true, Outputs: true,
 		NowPlaying: true, Gamepad: true, Zoom: true, Party: true,
 	}
+}
+
+func listOutputs() ([]output, error) {
+	text, err := runCommand("pactl", "-f", "json", "list", "sinks")
+	if err != nil {
+		return nil, err
+	}
+	var sinks []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(text), &sinks); err != nil {
+		return nil, err
+	}
+	current, err := runCommand("pactl", "get-default-sink")
+	if err != nil {
+		return nil, err
+	}
+	current = strings.TrimSpace(current)
+	outputs := make([]output, len(sinks))
+	for i, sink := range sinks {
+		outputs[i] = output{Name: sink.Name, Label: outputLabel(sink.Description), Active: sink.Name == current}
+	}
+	return outputs, nil
+}
+
+func setOutput(name string) error {
+	_, err := runCommand("pactl", "set-default-sink", name)
+	return err
 }
 
 // Power commands go through the helper so they reach the Hyprland session.
