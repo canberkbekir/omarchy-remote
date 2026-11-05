@@ -1,2 +1,6 @@
 pc-remote-web
 omarchy-remote
+pc-remote-web.exe
+tests/windows_e2e/artifacts/
+__pycache__/
+.pytest_cache/

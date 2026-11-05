@@ -1,0 +1,41 @@
+name: Windows
+
+on:
+  push:
+    branches: [main, windows]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      GOOS: windows
+      PC_REMOTE_ADDR: 127.0.0.1:8377
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -o pc-remote-web.exe .
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r tests/windows_e2e/requirements.txt
+      # conftest.py starts pc-remote-web.exe with PC_REMOTE_ADDR and reads the
+      # passcode from %AppData%\pc-remote\passcode.
+      - name: E2E
+        working-directory: tests/windows_e2e
+        env:
+          PC_REMOTE_EXE: ${{ github.workspace }}\pc-remote-web.exe
+        run: python -m pytest
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-e2e
+          path: tests/windows_e2e/artifacts/
+          retention-days: 14
