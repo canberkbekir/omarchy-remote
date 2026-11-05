@@ -67,11 +67,17 @@ func readTrack() (*track, string) {
 	art := fields[4]
 	// Served by /api/art, so the phone never contacts the cover's server.
 	if strings.HasPrefix(art, "https://") || strings.HasPrefix(art, "file://") {
-		h := fnv.New64a()
-		h.Write([]byte(art))
-		t.Art = "/api/art?v=" + strconv.FormatUint(h.Sum64(), 36)
+		t.Art = "/api/art?v=" + artVersion(art)
 	}
 	return t, art
+}
+
+// artVersion changes the cover URL when the cover changes, so the phone
+// reloads it.
+func artVersion(key string) string {
+	h := fnv.New64a()
+	h.Write([]byte(key))
+	return strconv.FormatUint(h.Sum64(), 36)
 }
 
 var errNoArt = errors.New("no cover art")
@@ -131,11 +137,14 @@ func readArt(art string) ([]byte, error) {
 	return nil, errNoArt
 }
 
-// handleArt serves the current track's cover. The URL comes from the player,
+// readCover returns the current track's cover image. Each OS reads it its
+// own way in platformCover; tests swap it.
+var readCover = platformCover
+
+// handleArt serves the current track's cover. It comes from the player,
 // never from the request.
 func handleArt(w http.ResponseWriter, r *http.Request) {
-	_, art := readTrack()
-	data, err := readArt(art)
+	data, err := readCover()
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No cover art.")
 		return

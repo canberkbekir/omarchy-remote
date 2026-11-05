@@ -6,8 +6,10 @@ import (
 	"math"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -23,7 +25,7 @@ const mediaMissing = "Media keys are not available."
 // platformFeatures: only volume, media keys, input, typing and the clipboard work on
 // Windows so far. Each port step turns its feature on here.
 func platformFeatures() featureSet {
-	return featureSet{Power: true, Screens: true, Outputs: outputsAvailable()}
+	return featureSet{Power: true, Screens: true, Outputs: outputsAvailable(), NowPlaying: nowPlayingAvailable()}
 }
 
 var (
@@ -100,13 +102,301 @@ var mediaKeys = map[string]uint16{
 }
 
 // Media keys reach whichever player Windows routes them to, so there is
-// always something to press. What is playing isn't read yet.
+// always something to press.
 func mediaAvailable() bool { return true }
-func nowPlaying() *track   { return nil }
 
+// The player that Windows shows in its media flyout is the current session
+// of the GlobalSystemMediaTransportControlsSessionManager. Players publish
+// their title, artist, cover, state and timeline there.
+
+const (
+	// IGlobalSystemMediaTransportControlsSessionManagerStatics
+	slotRequestAsync = 6
+	// IGlobalSystemMediaTransportControlsSessionManager
+	slotGetCurrentSession = 6
+	// IGlobalSystemMediaTransportControlsSession
+	slotSourceAppUserModelID       = 6
+	slotTryGetMediaPropertiesAsync = 7
+	slotGetTimelineProperties      = 8
+	slotGetPlaybackInfo            = 9
+	slotTrySkipNextAsync           = 16
+	slotTrySkipPreviousAsync       = 17
+	slotTryTogglePlayPauseAsync    = 20
+	// IGlobalSystemMediaTransportControlsSessionMediaProperties
+	slotTitle     = 6
+	slotArtist    = 9
+	slotThumbnail = 15
+	// IGlobalSystemMediaTransportControlsSessionPlaybackInfo
+	slotPlaybackStatus = 7
+	// IGlobalSystemMediaTransportControlsSessionTimelineProperties
+	slotStartTime       = 6
+	slotEndTime         = 7
+	slotTimelinePos     = 10
+	slotLastUpdatedTime = 11
+
+	// GlobalSystemMediaTransportControlsSessionPlaybackStatus
+	playbackClosed  = 0
+	playbackStopped = 3
+	playbackPlaying = 4
+
+	ticksPerSecond = 1e7                // TimeSpan and DateTime count 100 ns
+	ticksTo1970    = 116444736000000000 // DateTime starts at 1601
+)
+
+var errNoSession = errors.New("no media session")
+
+// sessionMu lets one session call run at a time, so a hung player holds at
+// most one OS thread.
+var sessionMu sync.Mutex
+
+// withSession runs fn on the current media session.
+func withSession(fn func(session *comObject) error) error {
+	sessionMu.Lock()
+	defer sessionMu.Unlock()
+	return withWinRT(func() error {
+		statics, err := activationFactory(classSessionManager, &iidSessionManagerStatics)
+		if err != nil {
+			return err
+		}
+		defer statics.release()
+		var manager *comObject
+		if err := callAsync(statics, slotRequestAsync, &iidAsyncOperationSessionManager, unsafe.Pointer(&manager)); err != nil {
+			return err
+		}
+		if manager == nil {
+			return errNoSession
+		}
+		defer manager.release()
+		session, err := getObject(manager, slotGetCurrentSession)
+		if err != nil {
+			return err
+		}
+		if session == nil {
+			return errNoSession
+		}
+		defer session.release()
+		return fn(session)
+	})
+}
+
+func mediaProperties(session *comObject) (*comObject, error) {
+	var props *comObject
+	if err := callAsync(session, slotTryGetMediaPropertiesAsync, &iidAsyncOperationMediaProperties, unsafe.Pointer(&props)); err != nil {
+		return nil, err
+	}
+	if props == nil {
+		return nil, errNoSession
+	}
+	return props, nil
+}
+
+// nowPlayingAvailable reports whether this Windows has the media session API,
+// which arrived in Windows 10 1809. That can't change while running.
+var nowPlayingAvailable = sync.OnceValue(func() bool {
+	return withWinRT(func() error {
+		statics, err := activationFactory(classSessionManager, &iidSessionManagerStatics)
+		if err == nil {
+			statics.release()
+		}
+		return err
+	}) == nil
+})
+
+func nowPlaying() *track {
+	var t *track
+	withSession(func(session *comObject) error {
+		props, err := mediaProperties(session)
+		if err != nil {
+			return err
+		}
+		defer props.release()
+		title, artist := getString(props, slotTitle), getString(props, slotArtist)
+		thumbnail, _ := getObject(props, slotThumbnail)
+		hasThumbnail := thumbnail != nil
+		if hasThumbnail {
+			thumbnail.release()
+		}
+
+		status := int32(playbackClosed)
+		if info, err := getObject(session, slotGetPlaybackInfo); err == nil && info != nil {
+			syscall.SyscallN(info.method(slotPlaybackStatus), uintptr(unsafe.Pointer(info)), uintptr(unsafe.Pointer(&status)))
+			info.release()
+		}
+		if title == "" || status == playbackClosed || status == playbackStopped {
+			return nil
+		}
+		t = &track{
+			Title:   title,
+			Artist:  artist,
+			Player:  playerName(getString(session, slotSourceAppUserModelID)),
+			Playing: status == playbackPlaying,
+		}
+		if timeline, err := getObject(session, slotGetTimelineProperties); err == nil && timeline != nil {
+			var start, end, position, updated int64
+			for _, field := range []struct {
+				slot  int
+				value *int64
+			}{{slotStartTime, &start}, {slotEndTime, &end}, {slotTimelinePos, &position}, {slotLastUpdatedTime, &updated}} {
+				syscall.SyscallN(timeline.method(field.slot), uintptr(unsafe.Pointer(timeline)), uintptr(unsafe.Pointer(field.value)))
+			}
+			timeline.release()
+			t.Position, t.Length = trackTimes(start, end, position, updated, t.Playing, time.Now())
+		}
+		if hasThumbnail {
+			t.Art = "/api/art?v=" + artVersion(t.Title+"\x00"+t.Artist+"\x00"+t.Player)
+		}
+		return nil
+	})
+	return t
+}
+
+// playerName shortens a session's app id: "Spotify.exe" is "Spotify", and a
+// Store app's "Family!App" is "App".
+func playerName(appID string) string {
+	if i := strings.LastIndexAny(appID, `\!`); i >= 0 {
+		appID = appID[i+1:]
+	}
+	if strings.HasSuffix(strings.ToLower(appID), ".exe") {
+		appID = appID[:len(appID)-4]
+	}
+	return appID
+}
+
+// trackTimes turns a session timeline, in 100 ns ticks, into seconds. Players
+// report the position only now and then, so while playing it moves on from
+// the time of the last report.
+func trackTimes(start, end, position, updated int64, playing bool, now time.Time) (pos, length float64) {
+	length = float64(end-start) / ticksPerSecond
+	pos = float64(position-start) / ticksPerSecond
+	if playing && updated > 0 {
+		if elapsed := float64(now.UnixNano()/100+ticksTo1970-updated) / ticksPerSecond; elapsed > 0 {
+			pos += elapsed
+		}
+	}
+	if length > 0 && pos > length {
+		pos = length
+	}
+	return max(pos, 0), max(length, 0)
+}
+
+// platformCover reads the session's thumbnail through a DataReader.
+func platformCover() ([]byte, error) {
+	var data []byte
+	err := withSession(func(session *comObject) error {
+		props, err := mediaProperties(session)
+		if err != nil {
+			return err
+		}
+		defer props.release()
+		ref, err := getObject(props, slotThumbnail)
+		if err != nil || ref == nil {
+			return errNoArt
+		}
+		defer ref.release()
+		var stream *comObject
+		if err := callAsync(ref, slotOpenReadAsync, &iidAsyncOperationStream, unsafe.Pointer(&stream)); err != nil {
+			return err
+		}
+		if stream == nil {
+			return errNoArt
+		}
+		defer stream.release()
+		data, err = readStream(stream)
+		return err
+	})
+	return data, err
+}
+
+// readStream reads a whole IRandomAccessStream of at most maxArtBytes.
+func readStream(stream *comObject) ([]byte, error) {
+	random, err := queryInterface(stream, &iidIRandomAccessStream)
+	if err != nil {
+		return nil, err
+	}
+	defer random.release()
+	var size uint64
+	hr, _, _ := syscall.SyscallN(random.method(slotStreamGetSize), uintptr(unsafe.Pointer(random)), uintptr(unsafe.Pointer(&size)))
+	if err := hresult(hr); err != nil {
+		return nil, err
+	}
+	if err := checkCoverSize(size); err != nil {
+		return nil, err
+	}
+	input, err := queryInterface(stream, &iidIInputStream)
+	if err != nil {
+		return nil, err
+	}
+	defer input.release()
+	factory, err := activationFactory(classDataReader, &iidIDataReaderFactory)
+	if err != nil {
+		return nil, err
+	}
+	defer factory.release()
+	var reader *comObject
+	hr, _, _ = syscall.SyscallN(factory.method(slotCreateDataReader),
+		uintptr(unsafe.Pointer(factory)), uintptr(unsafe.Pointer(input)), uintptr(unsafe.Pointer(&reader)))
+	if err := hresult(hr); err != nil {
+		return nil, err
+	}
+	defer reader.release()
+	var loaded uint32
+	if err := callAsync(reader, slotLoadAsync, &iidAsyncOperationUint32, unsafe.Pointer(&loaded), uintptr(size)); err != nil {
+		return nil, err
+	}
+	if err := checkCoverSize(uint64(loaded)); err != nil {
+		return nil, err
+	}
+	data := make([]byte, loaded)
+	hr, _, _ = syscall.SyscallN(reader.method(slotReadBytes),
+		uintptr(unsafe.Pointer(reader)), uintptr(loaded), uintptr(unsafe.Pointer(&data[0])))
+	return data, hresult(hr)
+}
+
+// checkCoverSize keeps covers to the same limit as on Linux.
+func checkCoverSize(size uint64) error {
+	if size == 0 || size > maxArtBytes {
+		return errNoArt
+	}
+	return nil
+}
+
+var sessionSlots = map[string]int{
+	"previous": slotTrySkipPreviousAsync,
+	"toggle":   slotTryTogglePlayPauseAsync,
+	"next":     slotTrySkipNextAsync,
+}
+
+var errRefused = errors.New("the player refused the action")
+
+// Tests swap these.
+var (
+	sessionAction = func(action string) error {
+		return withSession(func(session *comObject) error {
+			var done byte
+			if err := callAsync(session, sessionSlots[action], &iidAsyncOperationBool, unsafe.Pointer(&done)); err != nil {
+				return err
+			}
+			if done == 0 {
+				return errRefused
+			}
+			return nil
+		})
+	}
+	pressMediaKey = func(action string) error {
+		vk := mediaKeys[action]
+		return sendKeys([]keyInput{virtualKey(vk, false), virtualKey(vk, true)})
+	}
+)
+
+// mediaAction asks the current session first, which reaches the player shown
+// in the media flyout even when another app has focus. Media keys cover
+// players without a session. A timed-out request may still arrive, so it
+// gets no key press, which could undo a toggle.
 func mediaAction(action string) error {
-	vk := mediaKeys[action]
-	return sendKeys([]keyInput{virtualKey(vk, false), virtualKey(vk, true)})
+	if err := sessionAction(action); err == nil || errors.Is(err, errAsyncTimeout) {
+		return nil
+	}
+	return pressMediaKey(action)
 }
 
 // typeText types each character as Unicode input, so it doesn't depend on the
@@ -221,7 +511,7 @@ func (o *comObject) release() {
 
 func hresult(hr uintptr) error {
 	if int32(hr) < 0 {
-		return fmt.Errorf("Core Audio error 0x%08X", uint32(hr))
+		return fmt.Errorf("COM error 0x%08X", uint32(hr))
 	}
 	return nil
 }

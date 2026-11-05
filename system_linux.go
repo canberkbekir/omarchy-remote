@@ -131,6 +131,12 @@ func nowPlaying() *track {
 	return t
 }
 
+// platformCover reads the cover from the URL the player reported.
+func platformCover() ([]byte, error) {
+	_, art := readTrack()
+	return readArt(art)
+}
+
 func mediaAction(action string) error {
 	_, err := runCommand(mediaCommands[action]...)
 	return err
