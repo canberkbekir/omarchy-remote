@@ -381,7 +381,7 @@ sudo tailscale serve --https=443 off
 
 ### Windows (preview)
 
-Windows 10 and 11 work too. The trackpad, keyboard, typing, clipboard, volume, mute, media keys, now playing, audio outputs, power, turning the screens off and brightness (DDC/CI monitors and laptop panels) work. The game controller, zoom and night light need Linux for now.
+Windows 10 and 11 work too. The trackpad, keyboard, typing, clipboard, volume, mute, media keys, now playing, audio outputs, power, turning the screens off, brightness (DDC/CI monitors and laptop panels), the game controller and parties work. The game controller needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) driver: install it once, and `doctor` tells you if it's missing. Zoom and night light need Linux for now.
 
 1. Download `pc-remote-windows-amd64.zip` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and unzip it into a folder you keep, like `%LOCALAPPDATA%\Programs\pc-remote`.
 2. In that folder, run `pc-remote-web.exe setup`. It adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (it asks for administrator rights for that step only), starts the server, and shows the passcode QR code.
