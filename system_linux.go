@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -22,6 +24,56 @@ func platformFeatures() featureSet {
 	return featureSet{
 		Power: true, Screens: true, Nightlight: true, Brightness: true, Outputs: true,
 		NowPlaying: true, Gamepad: true, Zoom: true, Party: true,
+	}
+}
+
+func listMonitors() ([]monitor, error) {
+	output, err := runCommand("pc-remote", "hyprctl", "monitors", "-j")
+	if err != nil {
+		return nil, err
+	}
+	var found []struct {
+		Name       string `json:"name"`
+		Model      string `json:"model"`
+		DpmsStatus bool   `json:"dpmsStatus"`
+	}
+	if err := json.Unmarshal([]byte(output), &found); err != nil {
+		return nil, err
+	}
+	monitors := make([]monitor, len(found))
+	for i, m := range found {
+		monitors[i] = monitor{Name: m.Name, Label: m.Model, On: m.DpmsStatus}
+	}
+	return monitors, nil
+}
+
+var brightnessCommand = runCommand
+
+func platformReadBrightness(name string) (int, error) {
+	output, err := brightnessCommand("pc-remote", "omarchy-brightness-display", "--monitor", name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(output))
+}
+
+func platformWriteBrightness(name string, target int) error {
+	_, err := brightnessCommand("pc-remote", "omarchy-brightness-display", "--no-osd", "--monitor", name, strconv.Itoa(target)+"%")
+	return err
+}
+
+// platformForgetMonitor: one dropped request makes Omarchy's DDC helper mark
+// the monitor unavailable for a minute, so its cache entry is cleared before
+// a retry; the helper finds the monitor again.
+func platformForgetMonitor(name string) {
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+		cacheName := strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_.-", r) {
+				return r
+			}
+			return '_'
+		}, name)
+		os.Remove(filepath.Join(dir, "omarchy-brightness-display-ddc", cacheName+".bus"))
 	}
 }
 

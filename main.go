@@ -18,7 +18,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -240,50 +239,30 @@ func runCommand(argv ...string) (string, error) {
 	return string(output), err
 }
 
-func listMonitors() ([]monitor, error) {
-	output, err := runCommand("pc-remote", "hyprctl", "monitors", "-j")
-	if err != nil {
-		return nil, err
-	}
-	var found []struct {
-		Name       string `json:"name"`
-		Model      string `json:"model"`
-		DpmsStatus bool   `json:"dpmsStatus"`
-	}
-	if err := json.Unmarshal([]byte(output), &found); err != nil {
-		return nil, err
-	}
-	monitors := make([]monitor, len(found))
-	for i, m := range found {
-		monitors[i] = monitor{Name: m.Name, Label: m.Model, On: m.DpmsStatus}
-	}
-	return monitors, nil
-}
-
 // Some monitors drop DDC/CI requests now and then, so brightness reads and
 // writes are tried a few times, and a write counts only once it reads back.
 // Only monitors that have answered before are retried: one that never has,
 // like a TV without DDC/CI, gets a single try, so it stays quick to skip.
+// Only the read and write primitives differ per OS (see system_*.go);
+// they are variables so tests can stand in for a monitor.
 var (
-	brightnessCommand  = runCommand
-	brightnessAttempts = 3
-	brightnessPause    = 200 * time.Millisecond
+	readMonitorBrightness  = platformReadBrightness
+	writeMonitorBrightness = platformWriteBrightness
+	forgetMonitor          = platformForgetMonitor
+	brightnessAttempts     = 3
+	brightnessPause        = 200 * time.Millisecond
 )
 
-// retryBrightness waits before another attempt. One dropped request makes
-// Omarchy's DDC helper mark the monitor unavailable for a minute, so its
-// cache entry is cleared first; the helper finds the monitor again.
+// errNoRetry marks a primitive's failure that another try won't fix, like
+// a slow WMI query on Windows: retries are for monitors that drop DDC/CI
+// requests, and each retry here holds a.ddc.
+var errNoRetry = errors.New("not worth another try")
+
+// retryBrightness waits before another attempt and lets the platform drop
+// anything it remembered about the monitor failing.
 func retryBrightness(name string) {
 	time.Sleep(brightnessPause)
-	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		cacheName := strings.Map(func(r rune) rune {
-			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_.-", r) {
-				return r
-			}
-			return '_'
-		}, name)
-		os.Remove(filepath.Join(dir, "omarchy-brightness-display-ddc", cacheName+".bus"))
-	}
+	forgetMonitor(name)
 }
 
 // attempts says how many tries a monitor gets. Callers hold a.ddc.
@@ -294,21 +273,21 @@ func (a *app) attempts(name string) int {
 	return 1
 }
 
-// readBrightnessOnce asks the monitor once. Callers hold a.ddc.
-func (a *app) readBrightnessOnce(name string) *int {
-	output, err := brightnessCommand("pc-remote", "omarchy-brightness-display", "--monitor", name)
+// readBrightnessOnce asks the monitor once; the error, if any, says whether
+// to try again. Callers hold a.ddc.
+func (a *app) readBrightnessOnce(name string) (*int, error) {
+	value, err := readMonitorBrightness(name)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	value, err := strconv.Atoi(strings.TrimSpace(output))
-	if err != nil || value < 0 || value > 100 {
-		return nil
+	if value < 0 || value > 100 {
+		return nil, nil
 	}
 	if a.answered == nil {
 		a.answered = map[string]bool{}
 	}
 	a.answered[name] = true
-	return &value
+	return &value, nil
 }
 
 // readBrightness returns nil when the monitor doesn't answer. Callers hold a.ddc.
@@ -317,8 +296,12 @@ func (a *app) readBrightness(name string) *int {
 		if attempt > 0 {
 			retryBrightness(name)
 		}
-		if value := a.readBrightnessOnce(name); value != nil {
+		value, err := a.readBrightnessOnce(name)
+		if value != nil {
 			return value
+		}
+		if errors.Is(err, errNoRetry) {
+			break
 		}
 	}
 	// Gone quiet, perhaps unplugged or swapped: one try until it answers again.
@@ -333,12 +316,18 @@ func (a *app) setBrightness(name string, target int) bool {
 		if attempt > 0 {
 			retryBrightness(name)
 		}
-		if _, err := brightnessCommand("pc-remote", "omarchy-brightness-display", "--no-osd", "--monitor", name, strconv.Itoa(target)+"%"); err != nil {
+		if err := writeMonitorBrightness(name, target); err != nil {
+			if errors.Is(err, errNoRetry) {
+				return false
+			}
 			previous = nil
 			continue
 		}
-		got := a.readBrightnessOnce(name)
+		got, err := a.readBrightnessOnce(name)
 		if got == nil {
+			if errors.Is(err, errNoRetry) {
+				return false
+			}
 			previous = nil
 			continue
 		}
