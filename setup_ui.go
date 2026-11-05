@@ -367,7 +367,7 @@ func (w wizard) question() question {
 			both.disabled = "Needs Tailscale. Install it, then run setup again."
 			tailscale.disabled = both.disabled
 		default:
-			both.disabled = "Needs Tailscale. Log in with sudo tailscale up, then run setup again."
+			both.disabled = "Needs Tailscale. Log in with " + adminPrefix + "tailscale up, then run setup again."
 			tailscale.disabled = both.disabled
 		}
 		return question{
@@ -434,7 +434,7 @@ func (w wizard) question() question {
 			title: "Which passcode should phones use?",
 			why:   "Anyone with the passcode can control this PC, so keep it to yourself.",
 			more: "The passcode is asked once on each phone, then remembered. Five wrong tries block that device for a minute. " +
-				"You can see it any time with pc-remote passcode.",
+				"You can see it any time with " + cliName + " passcode.",
 			choices: []choice{first, {value: "choose", title: "Choose my own",
 				desc: "Something you'll remember. Phones sign in again with it."}},
 		}
@@ -483,10 +483,10 @@ func (w wizard) question() question {
 		return question{
 			title: "Your firewall may block " + what + ". Open it for your home network?",
 			why:   "Only devices on " + from + " get through. Nothing from the internet.",
-			more:  "Omarchy turns on the ufw firewall, which blocks every incoming connection unless a rule allows it. This adds: " + ufwRules(from, ports) + ".",
+			more:  firewallExplain(from, ports),
 			choices: []choice{
-				{value: "yes", title: "Open it", tag: "recommended", desc: "Asks for your password once, after you review."},
-				{value: "no", title: "I'll do it myself", desc: "Run: " + ufwRules(from, ports)},
+				{value: "yes", title: "Open it", tag: "recommended", desc: elevateOnceNote},
+				{value: "no", title: "I'll do it myself", desc: "Run: " + firewallHint(from, ports)},
 			},
 		}
 
@@ -664,7 +664,7 @@ func (w wizard) review(width int) string {
 	}
 	rows := [][2]string{{"Connect", connect}, {"Name", a.Name}, {"Colors", theme}, {"Party", party}, {"Passcode", passcode}}
 	if s.OmarchyHooks != "" {
-		updates := "By hand with pc-remote update"
+		updates := "By hand with " + cliName + " update"
 		if a.AutoUpdate {
 			updates = "With omarchy update"
 		}
@@ -690,7 +690,7 @@ func (w wizard) review(width int) string {
 	for i, act := range plan(s, a) {
 		label := act.Label
 		if act.Sudo {
-			label += st.dim.Render(" · asks for your password")
+			label += st.dim.Render(" · " + elevationNote)
 		}
 		label = st.r.NewStyle().Width(width - 7).Render(label)
 		fmt.Fprintf(&b, "    %s %s\n", st.dim.Render(fmt.Sprintf("%d.", i+1)), indent(label, 7)[7:])

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -69,27 +68,17 @@ func plan(s system, a answers) []action {
 		actions = append(actions, action{
 			Label: "Install " + strings.Join(packages, ", "),
 			Sudo:  true,
-			Run:   sudo(append([]string{"pacman", "-S", "--needed", "--noconfirm"}, packages...)...),
+			Run:   installPackages(packages),
 		})
 	}
 	if blocked := s.firewallBlocks(a); a.OpenFirewall && len(blocked) > 0 {
-		from := s.LANSubnet
-		if from == "" {
-			from = "192.168.0.0/16"
-		}
-		for _, port := range blocked {
-			actions = append(actions, action{
-				Label: fmt.Sprintf("Let devices on %s reach port %d", from, port),
-				Sudo:  true,
-				Run:   sudo("ufw", "allow", "from", from, "to", "any", "port", strconv.Itoa(port), "proto", "tcp"),
-			})
-		}
+		actions = append(actions, firewallActions(s, blocked)...)
 	}
 	if viaTailscale(a.Access) && !s.TailscaleServing {
 		actions = append(actions, action{
 			Label: "Share the app on your tailnet with tailscale serve",
-			Sudo:  true,
-			Run:   sudo("tailscale", "serve", "--bg", strconv.Itoa(s.port())),
+			Sudo:  tailscaleNeedsAdmin,
+			Run:   serveTailscale(s.port()),
 		})
 	}
 	path := filepath.Join(s.Dir, "config.toml")
@@ -135,17 +124,7 @@ func plan(s system, a answers) []action {
 			})
 		}
 	}
-	if !s.ServiceUnit {
-		actions = append(actions, action{
-			Label: "Add the background service",
-			Run:   func() error { return installUnit(s.Executable) },
-		})
-	}
-	actions = append(actions, action{
-		Label: "Start Omarchy Remote now and on every login",
-		Run:   startService,
-	})
-	return actions
+	return append(actions, autostartActions(s)...)
 }
 
 // saveUpdateHook adds a script that Omarchy runs after each omarchy update.
@@ -164,14 +143,6 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func sudo(argv ...string) func() error {
-	return func() error {
-		cmd := exec.Command("sudo", argv...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		return cmd.Run()
-	}
-}
-
 // renderConfig writes the settings with a short note on each one. Port and
 // listen are kept only if they were set by hand.
 func renderConfig(s system, a answers) string {
@@ -180,9 +151,9 @@ func renderConfig(s system, a answers) string {
 		guest = s.guestPort()
 	}
 	var b strings.Builder
-	b.WriteString("# Omarchy Remote settings, written by `pc-remote setup`.\n")
+	b.WriteString("# Omarchy Remote settings, written by `" + cliName + " setup`.\n")
 	b.WriteString("# Run it again to change them, or edit this file and run\n")
-	b.WriteString("# `systemctl --user restart pc-remote-web`. See the README.\n\n")
+	b.WriteString(configRestartNote)
 	fmt.Fprintf(&b, "name   = %s  # the title at the top of the app\n", tomlString(a.Name))
 	fmt.Fprintf(&b, "theme  = %s  # \"default\", \"omarchy\" or a file in themes/\n", tomlString(a.Theme))
 	fmt.Fprintf(&b, "access = %s  # \"lan\": home Wi-Fi; \"tailscale\": through tailscale serve; \"both\"\n", tomlString(a.Access))
@@ -258,49 +229,6 @@ func savePasscode(dir, p string) error {
 	return saveConfig(filepath.Join(dir, "passcode"), p+"\n")
 }
 
-// installUnit adds a user service for this binary, for installs that didn't ship one.
-func installUnit(executable string) error {
-	if executable == "" {
-		return errors.New("can't find this program's path")
-	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return err
-	}
-	unit := fmt.Sprintf(`[Unit]
-Description=Omarchy Remote
-After=pipewire.service wireplumber.service
-
-[Service]
-ExecStart=%s
-Environment=PATH=%s:%%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-`, executable, filepath.Dir(executable))
-	path := filepath.Join(dir, "systemd", "user", "pc-remote-web.service")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(unit), 0o644); err != nil {
-		return err
-	}
-	_, err = runCommand("systemctl", "--user", "daemon-reload")
-	return err
-}
-
-func startService() error {
-	if out, err := exec.Command("systemctl", "--user", "enable", "pc-remote-web.service").CombinedOutput(); err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
-	}
-	if out, err := exec.Command("systemctl", "--user", "restart", "pc-remote-web.service").CombinedOutput(); err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
 // waitForServer waits until the server answers, or reports why it stopped.
 func waitForServer(addr string) error {
 	host, port, err := net.SplitHostPort(addr)
@@ -314,7 +242,7 @@ func waitForServer(addr string) error {
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(300 * time.Millisecond)
-		if _, err := runCommand("systemctl", "--user", "is-failed", "--quiet", "pc-remote-web.service"); err == nil {
+		if serviceFailed() {
 			break
 		}
 		if conn, err := net.DialTimeout("tcp", target, time.Second); err == nil {
@@ -322,8 +250,7 @@ func waitForServer(addr string) error {
 			return nil
 		}
 	}
-	log, _ := runCommand("journalctl", "--user", "-u", "pc-remote-web.service", "-n", "5", "--no-pager", "-o", "cat")
-	return fmt.Errorf("it didn't start. The last log lines:\n%s", strings.TrimSpace(log))
+	return startFailure()
 }
 
 // address is a way to open the app, and where it works.
@@ -347,7 +274,7 @@ func appAddresses(s system, a answers) []address {
 }
 
 func tildePath(path string) string {
-	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home+"/") {
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home+string(filepath.Separator)) {
 		return "~" + path[len(home):]
 	}
 	return path
@@ -355,6 +282,9 @@ func tildePath(path string) string {
 
 // runSetup is `pc-remote setup`.
 func runSetup(args []string, stdout io.Writer) int {
+	if code, handled := platformSetup(args, stdout); handled {
+		return code
+	}
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	yes := flags.Bool("yes", false, "use the current settings or the defaults, without asking")
 	access := flags.String("access", "", `how the phone connects: "lan", "tailscale" or "both"`)
@@ -364,7 +294,7 @@ func runSetup(args []string, stdout io.Writer) int {
 	bar := flags.Bool("bar", true, "show the Omarchy Remote icon in the Omarchy bar")
 	flags.SetOutput(stdout)
 	flags.Usage = func() {
-		fmt.Fprintln(stdout, "Usage: pc-remote setup [--yes] [--access lan|tailscale|both] [--name NAME] [--theme THEME] [--party=false] [--bar=false]")
+		fmt.Fprintln(stdout, "Usage: "+cliName+" setup [--yes] [--access lan|tailscale|both] [--name NAME] [--theme THEME] [--party=false] [--bar=false]")
 		fmt.Fprintln(stdout, "\nSets up Omarchy Remote. Without --yes it asks, step by step.")
 		flags.PrintDefaults()
 	}
@@ -408,7 +338,7 @@ func runSetup(args []string, stdout io.Writer) int {
 	if *yes && s.ConfigProblem != "" {
 		fmt.Fprintln(stdout, "Your settings in "+tildePath(filepath.Join(dir, "config.toml"))+" have a mistake, so setup didn't touch them:")
 		fmt.Fprintln(stdout, "  "+s.ConfigProblem)
-		fmt.Fprintln(stdout, "Fix it, or run `pc-remote setup` without --yes to start over; it keeps a copy of the old file.")
+		fmt.Fprintln(stdout, "Fix it, or run `"+cliName+" setup` without --yes to start over; it keeps a copy of the old file.")
 		return 1
 	}
 
@@ -419,7 +349,7 @@ func runSetup(args []string, stdout io.Writer) int {
 		a.Install, a.OpenFirewall = false, false
 	case !interactive:
 		fmt.Fprintln(stdout, "Setup asks a few questions, so it needs a terminal.")
-		fmt.Fprintln(stdout, "To set up without questions, run: pc-remote setup --yes [--access lan|tailscale|both]")
+		fmt.Fprintln(stdout, "To set up without questions, run: "+cliName+" setup --yes [--access lan|tailscale|both]")
 		return 2
 	default:
 		final, err := tea.NewProgram(newWizard(s, a), tea.WithAltScreen()).Run()
@@ -436,7 +366,7 @@ func runSetup(args []string, stdout io.Writer) int {
 	}
 	a.Name = cleanPCName(a.Name, s.DefaultName)
 	if *yes && viaTailscale(a.Access) && !s.TailscaleServing {
-		fmt.Fprintf(stdout, "Note: run `sudo tailscale serve --bg %d` to reach the app through Tailscale.\n", s.port())
+		fmt.Fprintf(stdout, "Note: run `"+adminPrefix+"tailscale serve --bg %d` to reach the app through Tailscale.\n", s.port())
 	}
 	if *yes {
 		var kept []action
@@ -457,12 +387,12 @@ func apply(s system, a answers, actions []action, out io.Writer) int {
 	for _, act := range actions {
 		label := act.Label
 		if act.Sudo {
-			label += st.dim.Render("  (asks for your password)")
+			label += st.dim.Render("  (" + elevationNote + ")")
 		}
 		fmt.Fprintln(out, "  "+st.accent.Render("›")+" "+label)
 		if err := act.Run(); err != nil {
 			fmt.Fprintln(out, "  "+st.bad.Render("✗")+" "+err.Error())
-			fmt.Fprintln(out, "\n  Fix that and run "+st.code.Render("pc-remote setup")+" again.")
+			fmt.Fprintln(out, "\n  Fix that and run "+st.code.Render(cliName+" setup")+" again.")
 			return 1
 		}
 	}
@@ -486,8 +416,8 @@ func apply(s system, a answers, actions []action, out io.Writer) int {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, readyCard(st, appAddresses(s, a), passcode, terminalWidth()))
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "  "+st.dim.Render("Change settings later   ")+st.code.Render("pc-remote setup"))
-	fmt.Fprintln(out, "  "+st.dim.Render("Something not working?  ")+st.code.Render("pc-remote doctor"))
+	fmt.Fprintln(out, "  "+st.dim.Render("Change settings later   ")+st.code.Render(cliName+" setup"))
+	fmt.Fprintln(out, "  "+st.dim.Render("Something not working?  ")+st.code.Render(cliName+" doctor"))
 	fmt.Fprintln(out)
 	return 0
 }

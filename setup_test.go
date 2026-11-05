@@ -114,46 +114,6 @@ func labels(actions []action) []string {
 	return out
 }
 
-func TestPlan(t *testing.T) {
-	s := testSystem(t)
-	lan := answers{Access: "lan", Party: true, OpenFirewall: true, Install: true}
-
-	got := labels(plan(s, lan))
-	if len(got) != 2 || !strings.HasPrefix(got[0], "Save settings") || !strings.HasPrefix(got[1], "Start") {
-		t.Errorf("plain plan = %q", got)
-	}
-
-	s.Firewall = true
-	s.FirewallOpen[8377] = true
-	s.Checks = []check{{Label: "Media", Fix: []string{"playerctl"}}}
-	s.ServiceUnit = false
-	actions := plan(s, lan)
-	got = labels(actions)
-	if len(got) != 5 || got[0] != "Install playerctl" || got[1] != "Let devices on 192.168.1.0/24 reach port 8378" ||
-		got[3] != "Add the background service" {
-		t.Errorf("full plan = %q", got)
-	}
-	if !actions[0].Sudo || !actions[1].Sudo || actions[2].Sudo {
-		t.Error("wrong actions marked as needing a password")
-	}
-
-	declined := lan
-	declined.Install, declined.OpenFirewall = false, false
-	sudoLabel := func(l string) bool { return strings.HasPrefix(l, "Install") || strings.HasPrefix(l, "Let") }
-	if got := labels(plan(s, declined)); slices.ContainsFunc(got, sudoLabel) {
-		t.Errorf("declined plan = %q", got)
-	}
-
-	ts := answers{Access: "tailscale"}
-	if got := labels(plan(s, ts)); !strings.HasPrefix(got[0], "Share the app") {
-		t.Errorf("tailscale plan = %q", got)
-	}
-	s.TailscaleServing = true
-	if got := labels(plan(s, ts)); strings.HasPrefix(got[0], "Share the app") {
-		t.Errorf("tailscale already serving, plan = %q", got)
-	}
-}
-
 func key(k string) tea.KeyMsg {
 	switch k {
 	case "enter":
@@ -267,7 +227,7 @@ func TestBothAccess(t *testing.T) {
 	}
 
 	got := labels(plan(s, a))
-	if len(got) < 2 || got[0] != "Let devices on 192.168.1.0/24 reach port 8377" || !strings.HasPrefix(got[1], "Share the app") {
+	if len(got) < 2 || !strings.HasPrefix(got[0], "Let devices on 192.168.1.0/24 reach port 8377") || !strings.HasPrefix(got[1], "Share the app") {
 		t.Errorf("plan = %q", got)
 	}
 

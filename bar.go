@@ -216,8 +216,8 @@ func runStatus(args []string, out io.Writer) int {
 	}
 	if err != nil {
 		st.Problem = err.Error()
-	} else if _, err := runCommand("systemctl", "--user", "is-active", "--quiet", "pc-remote-web.service"); err != nil {
-		st.Problem = "Omarchy Remote isn't running. Start it with: systemctl --user start pc-remote-web"
+	} else if !serviceRunning(c) {
+		st.Problem = notRunningProblem
 	} else if p, err := askPresence(c, passcode); err != nil {
 		st.Problem = "Omarchy Remote isn't answering: " + err.Error()
 	} else {

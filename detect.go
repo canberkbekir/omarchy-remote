@@ -15,21 +15,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// feature is one thing the app can do, and the commands it needs.
-type feature struct {
-	Label   string
-	Tools   []string
-	Package string // Arch packages that provide the tools
-}
-
-var features = []feature{
-	{"Volume and audio output", []string{"wpctl"}, "wireplumber"},
-	{"Screens and night light", []string{"hyprctl"}, "hyprland"},
-	{"Typing and clipboard", []string{"wtype", "wl-copy"}, "wtype wl-clipboard"},
-	{"Now Playing and media keys", []string{"playerctl"}, "playerctl"},
-	{"Zoom lens", []string{"qs"}, "quickshell"},
-}
-
 // check is one line of the system check.
 type check struct {
 	Label  string
@@ -61,11 +46,11 @@ type system struct {
 	TailscaleName    string // e.g. pc.tailnet.ts.net
 	TailscaleServing bool   // tailscale serve already points at the port
 
-	Firewall     bool         // ufw is on
+	Firewall     bool         // ufw is on; Windows Firewall always is
 	FirewallOpen map[int]bool // ports ufw already allows; nil if unknown
 
 	Pacman      bool
-	ServiceUnit bool // a pc-remote-web.service exists
+	ServiceUnit bool // a pc-remote-web.service exists; on Windows, the logon task for this program
 	Executable  string
 
 	OmarchyHooks string // ~/.config/omarchy/hooks; empty without Omarchy
@@ -126,26 +111,6 @@ func detectSystem(dir string) system {
 	s.DefaultName = defaultPCName()
 	s.Executable, _ = os.Executable()
 
-	s.Checks = append(s.Checks, checkUinput())
-	_, s.Pacman = lookPath("pacman")
-	for _, f := range features {
-		c := check{Label: f.Label, OK: true}
-		var missing []string
-		for _, tool := range f.Tools {
-			if _, ok := lookPath(tool); !ok {
-				missing = append(missing, tool)
-			}
-		}
-		if len(missing) > 0 {
-			c.OK = false
-			c.Detail = "needs " + strings.Join(missing, " and ")
-			if s.Pacman {
-				c.Fix = strings.Fields(f.Package)
-			}
-		}
-		s.Checks = append(s.Checks, c)
-	}
-
 	var problem error
 	s.Existing, s.HasConfig, s.KeepPort, s.KeepListen, problem = readExisting(dir)
 	if problem != nil {
@@ -157,20 +122,6 @@ func detectSystem(dir string) system {
 		s.HasPasscode = true
 	}
 	s.OmarchyTheme = omarchyThemeName()
-	if _, ok := lookPath("omarchy-shell"); ok {
-		if dir, err := barPluginDir(); err == nil {
-			s.BarPluginDir = dir
-			_, err := os.Stat(dir)
-			s.BarPlugin = err == nil
-		}
-	}
-	if config, err := os.UserConfigDir(); err == nil {
-		if info, err := os.Stat(filepath.Join(config, "omarchy", "hooks")); err == nil && info.IsDir() {
-			s.OmarchyHooks = filepath.Join(config, "omarchy", "hooks")
-			_, err := os.Stat(s.updateHookPath())
-			s.UpdateHook = err == nil
-		}
-	}
 
 	s.LANAddress = lanAddress()
 	s.LANSubnet = subnetOf(s.LANAddress)
@@ -182,9 +133,7 @@ func detectSystem(dir string) system {
 		}
 	}
 
-	s.Firewall, s.FirewallOpen = ufwState("/etc/ufw/ufw.conf", "/etc/ufw/user.rules")
-	_, err := runCommand("systemctl", "--user", "cat", "pc-remote-web.service")
-	s.ServiceUnit = err == nil
+	detectPlatform(&s)
 	return s
 }
 
@@ -200,21 +149,6 @@ func lookPath(tool string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func checkUinput() check {
-	c := check{Label: "Keyboard, trackpad and gamepad"}
-	f, err := os.OpenFile("/dev/uinput", os.O_WRONLY, 0)
-	switch {
-	case err == nil:
-		f.Close()
-		c.OK = true
-	case errors.Is(err, os.ErrNotExist):
-		c.Detail = "/dev/uinput is missing"
-	default:
-		c.Detail = "no access to /dev/uinput: log in at the PC itself"
-	}
-	return c
 }
 
 // readExisting loads the current settings, falling back to the defaults if
