@@ -661,6 +661,7 @@ func main() {
 		tickets:         newConnectTickets(),
 		connectAddress:  func() address { return connectAddress(dir, settings) },
 	}
+	a.openGuestPad = guestPadOpener(a)
 	a.pointer.restore()
 
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {

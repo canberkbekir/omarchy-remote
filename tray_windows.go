@@ -339,8 +339,8 @@ func (t *tray) menu(x, y int32) {
 		party |= mfChecked
 		label = "End party"
 	}
-	// Off in config.toml, or no game controller on this PC yet.
-	if t.app.guestPort == 0 || !partyAvailable {
+	// Off in config.toml, or no game controller on this PC.
+	if t.app.guestPort == 0 || !gamepadAvailable() {
 		party |= mfGrayed
 	}
 	item(party, trayParty, label)

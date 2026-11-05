@@ -5,14 +5,14 @@ import (
 	"strings"
 )
 
-// detectPlatform fills in the Windows checks: SendInput, the logon task and
-// the firewall rules.
+// detectPlatform fills in the Windows checks: SendInput, ViGEmBus, the logon
+// task and the firewall rules.
 func detectPlatform(s *system) {
 	c := check{Label: "Keyboard and trackpad", OK: sendInputWorks()}
 	if !c.OK {
 		c.Detail = "SendInput doesn't work: run it on your own unlocked desktop, not as a service"
 	}
-	s.Checks = append([]check{c}, s.Checks...)
+	s.Checks = append([]check{c, checkGamepad()}, s.Checks...)
 	s.Firewall = true
 	s.FirewallOpen = firewallOpenPorts([]int{s.port(), s.guestPort()})
 	s.ServiceUnit = taskInstalled(s.Executable)

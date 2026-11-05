@@ -22,14 +22,13 @@ import (
 
 const mediaMissing = "Media keys are not available."
 
-// platformFeatures: only volume, media keys, input, typing and the clipboard work on
-// Windows so far. Each port step turns its feature on here.
+// platformFeatures: what works on this PC. Each port step turns its feature
+// on here. Guests need the game controller, so the party is on only when
+// the controller works.
 func platformFeatures() featureSet {
-	return featureSet{Power: true, Screens: true, Brightness: brightnessAvailable(), Outputs: outputsAvailable(), NowPlaying: nowPlayingAvailable(), Party: partyAvailable}
+	pad := gamepadAvailable()
+	return featureSet{Power: true, Screens: true, Brightness: brightnessAvailable(), Outputs: outputsAvailable(), NowPlaying: nowPlayingAvailable(), Gamepad: pad, Party: pad}
 }
-
-// partyAvailable: guests need the game controller, which Windows lacks so far.
-const partyAvailable = false
 
 var (
 	procLockWorkStation    = windows.NewLazySystemDLL("user32.dll").NewProc("LockWorkStation")

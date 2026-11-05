@@ -7,6 +7,11 @@ import (
 	"unsafe"
 )
 
+// guestPadOpener: each guest gets a new controller.
+func guestPadOpener(*app) func() (*gamepad, error) {
+	return openVirtualGamepad
+}
+
 func openVirtualGamepad() (*gamepad, error) {
 	f, err := os.OpenFile("/dev/uinput", os.O_WRONLY, 0)
 	if err != nil {
