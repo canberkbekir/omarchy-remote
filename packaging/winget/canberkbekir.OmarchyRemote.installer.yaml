@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 # Draft: see README.md before submitting.
 PackageIdentifier: canberkbekir.OmarchyRemote
-PackageVersion: 0.0.0
+PackageVersion: 0.2.0
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
@@ -10,10 +10,10 @@ NestedInstallerFiles:
 Commands:
   - pc-remote-web
 MinimumOSVersion: 10.0.17763.0
-ReleaseDate: 2026-01-01
+ReleaseDate: 2026-11-05
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/canberkbekir/omarchy-remote/releases/download/v0.0.0/pc-remote-windows-amd64.zip
-    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+    InstallerUrl: https://github.com/canberkbekir/omarchy-remote/releases/download/v0.2.0/pc-remote-windows-amd64.zip
+    InstallerSha256: A36BC4DE705CEB29E8F07A3D6A00F6E5B5295C8275BA3F2BDC233B99B47A5776
 ManifestType: installer
 ManifestVersion: 1.6.0

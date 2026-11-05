@@ -1,6 +1,6 @@
 # winget manifest (draft)
 
-These files are a draft for [winget-pkgs](https://github.com/microsoft/winget-pkgs). They aren't submitted yet.
+These files are for [winget-pkgs](https://github.com/microsoft/winget-pkgs). They are filled in for v0.2.0 but not submitted yet.
 
 The package installs the release zip `pc-remote-windows-amd64.zip` as a portable app. winget unpacks the whole zip, so `ViGEmClient.dll` stays next to `pc-remote-web.exe`, and it adds the `pc-remote-web` command to PATH.
 
@@ -16,7 +16,8 @@ The package installs the release zip `pc-remote-windows-amd64.zip` as a portable
 
 `pc-remote-web update` won't update a winget copy. It tells you to run `winget upgrade canberkbekir.OmarchyRemote` instead, so winget's record of the installed version stays right.
 
-Not checked yet, so test both in the VM before submitting:
+Checked in the Windows 11 VM with v0.2.0 (winget 1.29):
 
-- The Task Scheduler task from `pc-remote-web setup` points at the exe in winget's package folder. That folder is named after the package, not the version, so the task should keep working after an upgrade.
-- winget can't replace the exe while the server runs from it. The upgrade may fail until the server is stopped.
+- `winget validate` passes, and `winget install --manifest` installs to `%LOCALAPPDATA%\Microsoft\WinGet\Packages\canberkbekir.OmarchyRemote__DefaultSource\` with the DLL next to the exe and adds the `pc-remote-web` alias (in a new shell).
+- `setup` from that copy works; the Task Scheduler task points at the exe in the package folder, whose name has no version in it.
+- **winget can't upgrade or reinstall while the server runs**: it fails with `remove_all: Access is denied` and leaves the running copy in place. Stop the server first (`schtasks /End /TN "PC Remote"`, then end `pc-remote-web.exe` in Task Manager, since /End only stops the console), upgrade, then `schtasks /Run /TN "PC Remote"`.
