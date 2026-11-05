@@ -13,57 +13,23 @@ import (
 	"time"
 )
 
-// hyprLog stands in for hyprctl and keeps every call.
-type hyprLog struct {
-	mu    sync.Mutex
-	calls []string
-	fail  func(args []string) bool
+// fakeDriver stands in for the desktop's lens and keeps every call.
+type fakeDriver struct {
+	mu       sync.Mutex
+	cannot   bool
+	runs     []*lensRun
+	looks    []lensLook
+	settings []pointerSettings
+	calls    []string // "hide", "show" and "restore", in order
 }
 
-func (h *hyprLog) run(args ...string) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.calls = append(h.calls, strings.Join(args, " "))
-	if h.fail != nil && h.fail(args) {
-		return errors.New("hyprctl failed")
-	}
-	return nil
-}
+func (f *fakeDriver) available() bool { return !f.cannot }
 
-func (h *hyprLog) list() []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return slices.Clone(h.calls)
-}
-
-func (h *hyprLog) waitFor(t *testing.T, want string) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if slices.Contains(h.list(), want) {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("hyprctl calls = %q, want %q among them", h.list(), want)
-}
-
-const (
-	hideCall = "eval hl.config({ cursor = { invisible = true } })"
-	showCall = "eval hl.config({ cursor = { invisible = false } })"
-)
-
-// fakeLens counts lens starts; each run ends when stopped.
-type fakeLens struct {
-	mu    sync.Mutex
-	runs  []*lensRun
-	looks []lensLook
-}
-
-func (f *fakeLens) start(_ pointerSettings, look lensLook) (*lensRun, error) {
+func (f *fakeDriver) start(s pointerSettings, look lensLook) (*lensRun, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.looks = append(f.looks, look)
+	f.settings = append(f.settings, s)
 	run := &lensRun{done: make(chan struct{})}
 	var once sync.Once
 	run.stop = func() { once.Do(func() { close(run.done) }) }
@@ -71,27 +37,56 @@ func (f *fakeLens) start(_ pointerSettings, look lensLook) (*lensRun, error) {
 	return run, nil
 }
 
-func (f *fakeLens) last() *lensRun {
+func (f *fakeDriver) record(call string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, call)
+}
+
+func (f *fakeDriver) hideCursor(hidden bool) {
+	if hidden {
+		f.record("hide")
+	} else {
+		f.record("show")
+	}
+}
+
+func (f *fakeDriver) restore() { f.record("restore") }
+
+func (f *fakeDriver) list() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.calls)
+}
+
+func (f *fakeDriver) waitFor(t *testing.T, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if slices.Contains(f.list(), want) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("lens calls = %q, want %q among them", f.list(), want)
+}
+
+func (f *fakeDriver) last() *lensRun {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.runs[len(f.runs)-1]
 }
 
-func testPointer(t *testing.T, hypr *hyprLog) *pointer {
+func testPointer(t *testing.T, driver *fakeDriver) *pointer {
 	t.Helper()
-	if hypr == nil {
-		hypr = &hyprLog{}
+	if driver == nil {
+		driver = &fakeDriver{}
 	}
-	dir := t.TempDir()
-	p := &pointer{
-		path:       filepath.Join(dir, "pointer.json"),
-		hiddenMark: filepath.Join(dir, "cursor-hidden"),
-		canZoom:    true,
-		hyprctl:    hypr.run,
-		startLens:  (&fakeLens{}).start,
-		settings:   defaultPointerSettings(),
+	return &pointer{
+		path:     filepath.Join(t.TempDir(), "pointer.json"),
+		driver:   driver,
+		settings: defaultPointerSettings(),
 	}
-	return p
 }
 
 func TestPointerSettingsValid(t *testing.T) {
@@ -132,10 +127,8 @@ func TestPointerSettingsSaveAndLoad(t *testing.T) {
 }
 
 func TestZoomHidesTheCursorUntilItEnds(t *testing.T) {
-	hypr := &hyprLog{}
-	p := testPointer(t, hypr)
-	lens := &fakeLens{}
-	p.startLens = lens.start
+	lens := &fakeDriver{}
+	p := testPointer(t, lens)
 
 	if err := p.setZoom(true, lensLook{}); err != nil {
 		t.Fatal(err)
@@ -146,7 +139,7 @@ func TestZoomHidesTheCursorUntilItEnds(t *testing.T) {
 	if len(lens.runs) != 1 {
 		t.Fatalf("lens started %d times, want once", len(lens.runs))
 	}
-	hypr.waitFor(t, hideCall)
+	lens.waitFor(t, "hide")
 	if !p.view().Zooming {
 		t.Fatal("view says not zooming")
 	}
@@ -154,7 +147,7 @@ func TestZoomHidesTheCursorUntilItEnds(t *testing.T) {
 	if err := p.setZoom(false, lensLook{}); err != nil {
 		t.Fatal(err)
 	}
-	hypr.waitFor(t, showCall)
+	lens.waitFor(t, "show")
 	select {
 	case <-lens.last().done:
 	default:
@@ -166,15 +159,13 @@ func TestZoomHidesTheCursorUntilItEnds(t *testing.T) {
 }
 
 func TestLensEndingOnItsOwnBringsTheCursorBack(t *testing.T) {
-	hypr := &hyprLog{}
-	p := testPointer(t, hypr)
-	lens := &fakeLens{}
-	p.startLens = lens.start
+	lens := &fakeDriver{}
+	p := testPointer(t, lens)
 	if err := p.setZoom(true, lensLook{}); err != nil {
 		t.Fatal(err)
 	}
 	lens.last().stop() // Quickshell quit or crashed
-	hypr.waitFor(t, showCall)
+	lens.waitFor(t, "show")
 	deadline := time.Now().Add(2 * time.Second)
 	for p.view().Zooming && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
@@ -185,10 +176,8 @@ func TestLensEndingOnItsOwnBringsTheCursorBack(t *testing.T) {
 }
 
 func TestNewLensSettingsRestartTheLens(t *testing.T) {
-	hypr := &hyprLog{}
-	p := testPointer(t, hypr)
-	lens := &fakeLens{}
-	p.startLens = lens.start
+	lens := &fakeDriver{}
+	p := testPointer(t, lens)
 	if err := p.setZoom(true, lensLook{}); err != nil {
 		t.Fatal(err)
 	}
@@ -205,15 +194,14 @@ func TestNewLensSettingsRestartTheLens(t *testing.T) {
 		t.Fatalf("lens started %d times, zooming %v; want a second lens running", len(lens.runs), p.view().Zooming)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if slices.Contains(hypr.list(), showCall) {
+	if slices.Contains(lens.list(), "show") {
 		t.Fatal("the cursor came back while the lens restarted")
 	}
 }
 
 func TestLensTakesThePhoneThemeColors(t *testing.T) {
-	p := testPointer(t, nil)
-	lens := &fakeLens{}
-	p.startLens = lens.start
+	lens := &fakeDriver{}
+	p := testPointer(t, lens)
 	if err := p.setZoom(true, lensLook{Ring: "#7aa2f7", Ground: "red; }"}); err != nil {
 		t.Fatal(err)
 	}
@@ -230,9 +218,8 @@ func TestLensTakesThePhoneThemeColors(t *testing.T) {
 }
 
 func TestEndSessionStopsZoom(t *testing.T) {
-	p := testPointer(t, nil)
-	lens := &fakeLens{}
-	p.startLens = lens.start
+	lens := &fakeDriver{}
+	p := testPointer(t, lens)
 	if err := p.setZoom(true, lensLook{}); err != nil {
 		t.Fatal(err)
 	}
@@ -244,31 +231,8 @@ func TestEndSessionStopsZoom(t *testing.T) {
 	}
 }
 
-func TestRestoreOnlyShowsACursorItHid(t *testing.T) {
-	hypr := &hyprLog{}
-	p := testPointer(t, hypr)
-	p.restore()
-	if got := hypr.list(); len(got) != 0 {
-		t.Fatalf("restore with nothing hidden called hyprctl: %q", got)
-	}
-	p.hideCursor(true) // then pc-remote crashed
-	p.restore()
-	hypr.waitFor(t, showCall)
-	if _, err := os.Stat(p.hiddenMark); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the hidden mark is still there: %v", err)
-	}
-}
-
-func TestHideCursorFallsBackToKeyword(t *testing.T) {
-	hypr := &hyprLog{fail: func(args []string) bool { return args[0] == "eval" }}
-	p := testPointer(t, hypr)
-	p.hideCursor(true)
-	hypr.waitFor(t, "keyword cursor:invisible true")
-}
-
-func TestZoomNeedsQuickshell(t *testing.T) {
-	p := testPointer(t, nil)
-	p.canZoom = false
+func TestZoomNeedsALens(t *testing.T) {
+	p := testPointer(t, &fakeDriver{cannot: true})
 	if err := p.setZoom(true, lensLook{}); !errors.Is(err, errNoLens) {
 		t.Fatalf("setZoom = %v, want errNoLens", err)
 	}
@@ -289,39 +253,48 @@ func TestPointerSaveRejectsBadSettings(t *testing.T) {
 	}
 }
 
-// hyprBatchReply is what Hyprland answers to "[[BATCH]]j/cursorpos;j/activewindow".
-const hyprBatchReply = "{\n    \"x\": 5100,\n    \"y\": 600\n}\n\n\n\n{\n    \"address\": \"0x55b9933fd940\",\n    \"at\": [3840, 0],\n    \"size\": [2560, 1440],\n    \"class\": \"chromium\"\n}"
-
-func TestParseSpot(t *testing.T) {
-	spot, err := parseSpot(strings.NewReader(hyprBatchReply))
-	if err != nil {
+func TestLensGetsTheSavedSettings(t *testing.T) {
+	lens := &fakeDriver{}
+	p := testPointer(t, lens)
+	if err := p.setSettings(pointerSettings{Lens: "small", Zoom: 4}); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := spot.line(), "5100 600 3840 0 2560 1440 0x55b9933fd940\n"; got != want {
-		t.Fatalf("line = %q, want %q", got, want)
+	if err := p.setZoom(true, lensLook{}); err != nil {
+		t.Fatal(err)
 	}
-	for _, reply := range []string{"{\"x\": 10, \"y\": 20}\n\n{}", "{\"x\": 10, \"y\": 20}"} {
-		spot, err := parseSpot(strings.NewReader(reply))
-		if err != nil {
-			t.Fatalf("%q: %v", reply, err)
-		}
-		if got, want := spot.line(), "10 20 0 0 0 0 -\n"; got != want {
-			t.Fatalf("%q: line = %q, want %q", reply, got, want)
-		}
-	}
-	if _, err := parseSpot(strings.NewReader("unknown request")); err == nil {
-		t.Fatal("parseSpot accepted garbage")
+	if want := (pointerSettings{Lens: "small", Zoom: 4}); lens.settings[0] != want {
+		t.Fatalf("lens settings = %+v, want %+v", lens.settings[0], want)
 	}
 }
 
-func TestLensFilesAreEmbedded(t *testing.T) {
-	dir := t.TempDir()
-	if err := writeLensFiles(dir); err != nil {
+func TestRestoreAsksTheLens(t *testing.T) {
+	lens := &fakeDriver{}
+	testPointer(t, lens).restore()
+	if got := lens.list(); !slices.Equal(got, []string{"restore"}) {
+		t.Fatalf("lens calls = %q, want [restore]", got)
+	}
+}
+
+// close runs on every way out: a signal, the console closing, tray Quit.
+func TestCloseEndsZoomBeforeExit(t *testing.T) {
+	lens := &fakeDriver{}
+	p := testPointer(t, lens)
+	p.close() // nothing running: nothing to do
+	if got := lens.list(); len(got) != 0 {
+		t.Fatalf("close with no lens called %q", got)
+	}
+	if err := p.setZoom(true, lensLook{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"shell.qml", "sharpen.frag.qsb"} {
-		if info, err := os.Stat(filepath.Join(dir, name)); err != nil || info.Size() == 0 {
-			t.Errorf("%s missing or empty: %v", name, err)
-		}
+	p.close()
+	select {
+	case <-lens.last().done:
+	default:
+		t.Fatal("close returned with the lens still running")
+	}
+	lens.waitFor(t, "show")
+	p.close() // a second way out finds nothing left
+	if p.view().Zooming {
+		t.Fatal("view says zooming after close")
 	}
 }

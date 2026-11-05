@@ -27,7 +27,7 @@ const mediaMissing = "Media keys are not available."
 // the controller works.
 func platformFeatures() featureSet {
 	pad := gamepadAvailable()
-	return featureSet{Power: true, Screens: true, Brightness: brightnessAvailable(), Outputs: outputsAvailable(), NowPlaying: nowPlayingAvailable(), Gamepad: pad, Party: pad}
+	return featureSet{Power: true, Screens: true, Brightness: brightnessAvailable(), Outputs: outputsAvailable(), NowPlaying: nowPlayingAvailable(), Gamepad: pad, Zoom: zoomAvailable(), Party: pad}
 }
 
 var (

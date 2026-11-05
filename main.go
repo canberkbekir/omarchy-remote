@@ -718,6 +718,7 @@ func main() {
 		IdleTimeout:       time.Minute,
 	}
 	// A stop or restart closes the zoom lens and brings the cursor back.
+	watchConsoleClose(a.pointer.close)
 	go func() {
 		stop := make(chan os.Signal, 1)
 		signal.Notify(stop, syscall.SIGTERM, os.Interrupt)

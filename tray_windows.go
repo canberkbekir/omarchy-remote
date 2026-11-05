@@ -48,6 +48,7 @@ var (
 const (
 	wmNull        = 0x0000
 	wmContextMenu = 0x007B
+	wmEndSession  = 0x0016
 	wmTimer       = 0x0113
 	wmApp         = 0x8000
 	trayCallback  = wmApp + 1 // the icon's mouse and keyboard events
@@ -301,6 +302,10 @@ func (t *tray) windowProc(wnd, message, wParam, lParam uintptr) uintptr {
 		return 0
 	case message == wmTimer:
 		t.refresh()
+		return 0
+	case message == wmEndSession && wParam != 0:
+		// Logoff or shutdown without a console: put the screen back first.
+		t.app.pointer.close()
 		return 0
 	case message == trayQuitMsg:
 		t.remove()

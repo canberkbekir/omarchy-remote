@@ -22,7 +22,8 @@ func TestStatusJSON(t *testing.T) {
 	want := map[string]string{
 		"linux": before + `,"features":{"power":true,"screens":true,"nightlight":true,"brightness":true,"outputs":true,"nowPlaying":true,"gamepad":true,"zoom":true,"party":true}}`,
 		"windows": before + `,"features":{"power":true,"screens":true,"nightlight":false,"brightness":false,"outputs":` +
-			strconv.FormatBool(s.Features.Outputs) + `,"nowPlaying":` + strconv.FormatBool(s.Features.NowPlaying) + `,"gamepad":false,"zoom":false,"party":false}}`,
+			strconv.FormatBool(s.Features.Outputs) + `,"nowPlaying":` + strconv.FormatBool(s.Features.NowPlaying) + `,"gamepad":false,"zoom":` +
+			strconv.FormatBool(s.Features.Zoom) + `,"party":false}}`,
 	}[runtime.GOOS]
 	if string(got) != want {
 		t.Errorf("status JSON\n got %s\nwant %s", got, want)
