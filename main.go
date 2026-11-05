@@ -38,11 +38,18 @@ const (
 //go:embed web
 var webFiles embed.FS
 
-// Power commands go through the helper so they reach the Hyprland session.
-var powerCommands = map[string][]string{
-	"lock":     {"pc-remote", "omarchy-system-lock"},
-	"reboot":   {"pc-remote", "omarchy-system-reboot"},
-	"shutdown": {"pc-remote", "omarchy-system-shutdown"},
+// errUnknownAction means the phone asked for a power action this PC doesn't have.
+var errUnknownAction = errors.New("unknown action")
+
+// startDetached starts a command without waiting for it, because rebooting
+// can end this process mid-request. Tests swap it for a recorder.
+var startDetached = func(argv ...string) error {
+	cmd := exec.Command(argv[0], argv[1:]...)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go cmd.Wait()
+	return nil
 }
 
 var mediaActions = map[string]bool{"previous": true, "toggle": true, "next": true}
@@ -602,18 +609,14 @@ func handlePower(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	argv, ok := powerCommands[body.Action]
-	if !ok {
+	switch err := powerAction(body.Action); {
+	case errors.Is(err, errUnknownAction):
 		writeError(w, http.StatusBadRequest, "Unknown action.")
 		return
-	}
-	// Don't wait for it: rebooting can end this process mid-request.
-	cmd := exec.Command(argv[0], argv[1:]...)
-	if err := cmd.Start(); err != nil {
+	case err != nil:
 		writeError(w, http.StatusInternalServerError, "Command failed.")
 		return
 	}
-	go cmd.Wait()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

@@ -27,6 +27,34 @@ func platformFeatures() featureSet {
 	}
 }
 
+// Power commands go through the helper so they reach the Hyprland session.
+var powerCommands = map[string][]string{
+	"lock":     {"pc-remote", "omarchy-system-lock"},
+	"reboot":   {"pc-remote", "omarchy-system-reboot"},
+	"shutdown": {"pc-remote", "omarchy-system-shutdown"},
+}
+
+func powerAction(action string) error {
+	argv, ok := powerCommands[action]
+	if !ok {
+		return errUnknownAction
+	}
+	return startDetached(argv...)
+}
+
+func screensCommand(on bool) []string {
+	state := "off"
+	if on {
+		state = "on"
+	}
+	return []string{"pc-remote", "omarchy-brightness-display", state}
+}
+
+func setScreens(on bool) error {
+	_, err := runCommand(screensCommand(on)...)
+	return err
+}
+
 var mediaCommands = map[string][]string{
 	"previous": {"playerctl", "previous"},
 	"toggle":   {"playerctl", "play-pause"},

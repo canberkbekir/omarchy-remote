@@ -25,7 +25,66 @@ const audioOutputsAvailable = false
 // platformFeatures: only volume, media keys, input, typing and the clipboard work on
 // Windows so far. Each port step turns its feature on here.
 func platformFeatures() featureSet {
-	return featureSet{Outputs: audioOutputsAvailable}
+	return featureSet{Power: true, Screens: true, Outputs: audioOutputsAvailable}
+}
+
+var (
+	procLockWorkStation    = windows.NewLazySystemDLL("user32.dll").NewProc("LockWorkStation")
+	procSendMessageTimeout = windows.NewLazySystemDLL("user32.dll").NewProc("SendMessageTimeoutW")
+)
+
+const (
+	hwndBroadcast    = 0xFFFF
+	wmSyscommand     = 0x0112
+	scMonitorPower   = 0xF170
+	monitorPowerOff  = 2
+	smtoAbortIfHung  = 0x0002
+	screensTimeoutMs = 1000
+)
+
+// shutdown.exe is started without waiting, because it ends this process.
+var shutdownCommands = map[string][]string{
+	"reboot":   {"shutdown", "/r", "/t", "0"},
+	"shutdown": {"shutdown", "/s", "/t", "0"},
+}
+
+func powerAction(action string) error {
+	if action == "lock" {
+		if ok, _, err := procLockWorkStation.Call(); ok == 0 {
+			return err
+		}
+		return nil
+	}
+	argv, ok := shutdownCommands[action]
+	if !ok {
+		return errUnknownAction
+	}
+	return startDetached(argv...)
+}
+
+// setScreens turns the monitors off with SC_MONITORPOWER. Windows has no
+// matching "on" message that works reliably, so a tiny pointer nudge wakes
+// them instead, the same way a real mouse would.
+func setScreens(on bool) error {
+	if on {
+		var m mouseInput
+		m.mi.flags = mouseeventfMove
+		m.mi.dx = 1
+		if err := sendMouse(m); err != nil {
+			return err
+		}
+		m.mi.dx = -1
+		return sendMouse(m)
+	}
+	// A broadcast reports a timeout when any one window is hung, though the
+	// others already turned the screens off, so a timeout still counts.
+	var result uintptr
+	ok, _, err := procSendMessageTimeout.Call(hwndBroadcast, wmSyscommand, scMonitorPower, monitorPowerOff,
+		smtoAbortIfHung, screensTimeoutMs, uintptr(unsafe.Pointer(&result)))
+	if ok == 0 && err != windows.ERROR_SUCCESS && err != windows.ERROR_TIMEOUT {
+		return err
+	}
+	return nil
 }
 
 const (

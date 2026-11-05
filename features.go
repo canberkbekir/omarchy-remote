@@ -237,11 +237,7 @@ func handleScreens(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "On must be true or false.")
 		return
 	}
-	state := "off"
-	if *body.On {
-		state = "on"
-	}
-	if _, err := runCommand("pc-remote", "omarchy-brightness-display", state); err != nil {
+	if err := setScreens(*body.On); err != nil {
 		writeError(w, http.StatusInternalServerError, "Command failed.")
 		return
 	}

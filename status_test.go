@@ -20,7 +20,7 @@ func TestStatusJSON(t *testing.T) {
 	const before = `{"name":"pc","theme":"t1","volume":40,"muted":true,"media":true,"playing":false,"nightlight":true,"nowPlaying":null,"output":"Speakers","zooming":false`
 	want := map[string]string{
 		"linux":   before + `,"features":{"power":true,"screens":true,"nightlight":true,"brightness":true,"outputs":true,"nowPlaying":true,"gamepad":true,"zoom":true,"party":true}}`,
-		"windows": before + `,"features":{"power":false,"screens":false,"nightlight":false,"brightness":false,"outputs":false,"nowPlaying":false,"gamepad":false,"zoom":false,"party":false}}`,
+		"windows": before + `,"features":{"power":true,"screens":true,"nightlight":false,"brightness":false,"outputs":false,"nowPlaying":false,"gamepad":false,"zoom":false,"party":false}}`,
 	}[runtime.GOOS]
 	if string(got) != want {
 		t.Errorf("status JSON\n got %s\nwant %s", got, want)
