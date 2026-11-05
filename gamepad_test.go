@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -157,8 +158,12 @@ func TestGamepadLayoutSaveAndRead(t *testing.T) {
 		t.Errorf("read back = %s", got)
 	}
 	info, err := os.Stat(filepath.Join(a.dir, "gamepad.json"))
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("layout file = %v, %v", info, err)
+	if err != nil {
+		t.Fatalf("layout file: %v", err)
+	}
+	// Windows keeps files private with ACLs, not mode bits.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("layout file mode = %v", info.Mode().Perm())
 	}
 }
 
