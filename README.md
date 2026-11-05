@@ -32,7 +32,7 @@ One small Go binary on the PC, one web app on your Home Screen. No app store, no
 - [Security](#security)
 - [Configuration](#configuration)
 - [Themes](#themes)
-- [More](#more): uninstall, the `pc-remote` helper, development
+- [More](#more): uninstall, the `pc-remote` helper, Windows preview, development
 
 ## What it does
 
@@ -378,6 +378,16 @@ sudo tailscale serve --https=443 off
 ### The `pc-remote` helper
 
 `scripts/pc-remote` runs a command inside your running Hyprland session, for example `pc-remote omarchy-system-lock`. The server uses it for session commands. It also works over SSH, so you can use it from an iPhone Shortcuts **Run Script Over SSH** action as well.
+
+### Windows (preview)
+
+The server also builds for Windows. The trackpad, keyboard, typing, clipboard, volume, mute and media keys work. The rest of the app needs Linux for now: now playing, audio outputs, the screens, night light, brightness, power, the game controller and zoom.
+
+```bash
+GOOS=windows GOARCH=amd64 go build -o pc-remote-web.exe .
+```
+
+Run `pc-remote-web.exe` in your Windows session, not as a service, because a service can't reach the desktop. The passcode is in `%AppData%\pc-remote\passcode`, and `config.toml` goes in the same folder. On first run, allow the Windows Firewall prompt for private networks. Windows doesn't let it type into apps running as administrator unless `pc-remote-web.exe` runs as administrator too.
 
 ### Development
 

@@ -168,6 +168,9 @@ func outputLabel(description string) string {
 }
 
 func listOutputs() ([]output, error) {
+	if !audioOutputsAvailable {
+		return []output{}, nil
+	}
 	text, err := runCommand("pactl", "-f", "json", "list", "sinks")
 	if err != nil {
 		return nil, err
@@ -268,13 +271,13 @@ func handleType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Text != "" {
-		if err := runDetached("", "pc-remote", "wtype", "--", body.Text); err != nil {
+		if err := typeText(body.Text); err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not type the text.")
 			return
 		}
 	}
 	if body.Enter {
-		if err := runDetached("", "pc-remote", "wtype", "-k", "Return"); err != nil {
+		if err := pressEnter(); err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not press Enter.")
 			return
 		}
@@ -283,11 +286,7 @@ func handleType(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleClipboardRead(w http.ResponseWriter, r *http.Request) {
-	// wl-paste fails when nothing is copied or the clipboard holds no text.
-	text, err := runCommand("pc-remote", "wl-paste", "--no-newline", "--type", "text/plain")
-	if err != nil {
-		text = ""
-	}
+	text := readClipboard()
 	truncated := len(text) > maxClipboardBytes
 	if truncated {
 		text = strings.ToValidUTF8(text[:maxClipboardBytes], "")
@@ -306,7 +305,7 @@ func handleClipboardWrite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Text must be 1 byte to 64 KB.")
 		return
 	}
-	if err := runDetached(body.Text, "pc-remote", "wl-copy", "--type", "text/plain"); err != nil {
+	if err := writeClipboard(body.Text); err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not set the clipboard.")
 		return
 	}

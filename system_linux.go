@@ -1,0 +1,96 @@
+package main
+
+import (
+	"errors"
+	"math"
+	"os/exec"
+	"strconv"
+	"strings"
+)
+
+// The Linux side of the remote: PipeWire for volume, playerctl for media,
+// and wtype and wl-clipboard (run in the Hyprland session) for text.
+
+const (
+	sink         = "@DEFAULT_AUDIO_SINK@"
+	mediaMissing = "playerctl is not installed."
+)
+
+// audioOutputsAvailable says whether the PC can list and switch sound outputs.
+const audioOutputsAvailable = true
+
+var mediaCommands = map[string][]string{
+	"previous": {"playerctl", "previous"},
+	"toggle":   {"playerctl", "play-pause"},
+	"next":     {"playerctl", "next"},
+}
+
+func readVolume() (volume int, muted bool, err error) {
+	output, err := runCommand("wpctl", "get-volume", sink)
+	if err != nil {
+		return 0, false, err
+	}
+	fields := strings.Fields(output)
+	if len(fields) < 2 {
+		return 0, false, errors.New("unexpected wpctl output")
+	}
+	level, err := strconv.ParseFloat(fields[1], 64)
+	if err != nil {
+		return 0, false, err
+	}
+	return int(math.Round(level * 100)), strings.Contains(output, "[MUTED]"), nil
+}
+
+// setVolume also unmutes, so the new level is heard.
+func setVolume(volume int) error {
+	if _, err := runCommand("wpctl", "set-volume", sink, strconv.Itoa(volume)+"%"); err != nil {
+		return err
+	}
+	return setMuted(false)
+}
+
+func setMuted(muted bool) error {
+	value := "0"
+	if muted {
+		value = "1"
+	}
+	_, err := runCommand("wpctl", "set-mute", sink, value)
+	return err
+}
+
+func mediaAvailable() bool {
+	_, err := exec.LookPath("playerctl")
+	return err == nil
+}
+
+func nowPlaying() *track {
+	t, _ := readTrack()
+	return t
+}
+
+func mediaAction(action string) error {
+	_, err := runCommand(mediaCommands[action]...)
+	return err
+}
+
+func typeText(text string) error {
+	return runDetached("", "pc-remote", "wtype", "--", text)
+}
+
+func pressEnter() error {
+	return runDetached("", "pc-remote", "wtype", "-k", "Return")
+}
+
+// readClipboard returns "" when nothing is copied or the clipboard holds no
+// text, which is when wl-paste fails.
+func readClipboard() string {
+	text, err := runCommand("pc-remote", "wl-paste", "--no-newline", "--type", "text/plain")
+	if err != nil {
+		return ""
+	}
+	return text
+}
+
+func writeClipboard(text string) error {
+	return runDetached(text, "pc-remote", "wl-copy", "--type", "text/plain")
+}

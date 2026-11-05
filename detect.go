@@ -293,11 +293,13 @@ func ownerName() string {
 	if err != nil || u.Username == "root" {
 		return ""
 	}
+	name := u.Username
 	full, _, _ := strings.Cut(u.Name, ",")
 	if words := strings.Fields(full); len(words) > 0 {
-		return titleCase(words[0])
+		name = words[0]
 	}
-	return titleCase(u.Username)
+	// Windows may name the account DOMAIN\user.
+	return titleCase(name[strings.LastIndex(name, `\`)+1:])
 }
 
 func titleCase(s string) string {

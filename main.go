@@ -10,7 +10,6 @@ import (
 	"errors"
 	"io/fs"
 	"log"
-	"math"
 	"math/big"
 	"mime"
 	"net/http"
@@ -28,7 +27,6 @@ import (
 )
 
 const (
-	sink             = "@DEFAULT_AUDIO_SINK@"
 	passcodeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 	passcodeLength   = 10
 	maxFailures      = 5
@@ -47,11 +45,7 @@ var powerCommands = map[string][]string{
 	"shutdown": {"pc-remote", "omarchy-system-shutdown"},
 }
 
-var mediaCommands = map[string][]string{
-	"previous": {"playerctl", "previous"},
-	"toggle":   {"playerctl", "play-pause"},
-	"next":     {"playerctl", "next"},
-}
+var mediaActions = map[string]bool{"previous": true, "toggle": true, "next": true}
 
 type status struct {
 	Name       string `json:"name,omitempty"`
@@ -348,25 +342,14 @@ func nightlightEnabled() (bool, error) {
 }
 
 func readStatus() (status, error) {
-	output, err := runCommand("wpctl", "get-volume", sink)
+	volume, muted, err := readVolume()
 	if err != nil {
 		return status{}, err
 	}
-	fields := strings.Fields(output)
-	if len(fields) < 2 {
-		return status{}, errors.New("unexpected wpctl output")
-	}
-	level, err := strconv.ParseFloat(fields[1], 64)
-	if err != nil {
-		return status{}, err
-	}
-	s := status{
-		Volume: int(math.Round(level * 100)),
-		Muted:  strings.Contains(output, "[MUTED]"),
-	}
-	if _, err := exec.LookPath("playerctl"); err == nil {
+	s := status{Volume: volume, Muted: muted}
+	if mediaAvailable() {
 		s.Media = true
-		s.NowPlaying, _ = readTrack()
+		s.NowPlaying = nowPlaying()
 		s.Playing = s.NowPlaying != nil && s.NowPlaying.Playing
 	}
 	if outputs, err := listOutputs(); err == nil {
@@ -472,11 +455,7 @@ func handleVolume(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Volume must be 0 to 100.")
 		return
 	}
-	if _, err := runCommand("wpctl", "set-volume", sink, strconv.Itoa(*body.Volume)+"%"); err != nil {
-		writeError(w, http.StatusInternalServerError, "Command failed.")
-		return
-	}
-	if _, err := runCommand("wpctl", "set-mute", sink, "0"); err != nil {
+	if err := setVolume(*body.Volume); err != nil {
 		writeError(w, http.StatusInternalServerError, "Command failed.")
 		return
 	}
@@ -494,11 +473,7 @@ func handleMute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Muted must be true or false.")
 		return
 	}
-	value := "0"
-	if *body.Muted {
-		value = "1"
-	}
-	if _, err := runCommand("wpctl", "set-mute", sink, value); err != nil {
+	if err := setMuted(*body.Muted); err != nil {
 		writeError(w, http.StatusInternalServerError, "Command failed.")
 		return
 	}
@@ -512,16 +487,15 @@ func handleMedia(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	argv, ok := mediaCommands[body.Action]
-	if !ok {
+	if !mediaActions[body.Action] {
 		writeError(w, http.StatusBadRequest, "Unknown action.")
 		return
 	}
-	if _, err := exec.LookPath(argv[0]); err != nil {
-		writeError(w, http.StatusNotImplemented, "playerctl is not installed.")
+	if !mediaAvailable() {
+		writeError(w, http.StatusNotImplemented, mediaMissing)
 		return
 	}
-	if _, err := runCommand(argv...); err != nil {
+	if err := mediaAction(body.Action); err != nil {
 		writeError(w, http.StatusInternalServerError, "No media player found.")
 		return
 	}
