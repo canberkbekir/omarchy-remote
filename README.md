@@ -407,6 +407,19 @@ go build -o pc-remote-web . && ./pc-remote-web
 
 The web app is `web/index.html`, `web/app.js` and `web/base.css`, and the guest page is `web/join.html` with `web/join.js`. They are embedded into the binary at build time, along with the built-in themes in `themes/`. Keep scripts in files: the Content-Security-Policy blocks inline scripts and `style=""` attributes.
 
+The Go code lives in `internal/`, one folder per part, each with its tests next to it. Files ending in `_linux.go` or `_windows.go` hold what differs per OS.
+
+| Folder | What's in it |
+| --- | --- |
+| `main.go` | Runs a `pc-remote` command, or else the server |
+| `internal/server` | The web server the phone talks to, the party, the tray icon or bar widget, the zoom lens |
+| `internal/cli` | `setup`, `doctor`, `status`, `update`, `uninstall`, and the Omarchy bar plugin |
+| `internal/system` | Volume, media, power, screens, brightness, sound outputs, clipboard |
+| `internal/input` | The virtual keyboard, mouse and game controller |
+| `internal/config` | `config.toml` and the passcode |
+| `internal/api` | What `/api/presence` answers, for the CLI and the tray |
+| `internal/network`, `internal/qrtext`, `internal/run` | Small helpers: addresses, QR codes as text, running programs |
+
 The screenshots and clips in `docs/` were recorded from the real web app in a phone-sized browser, with a stand-in PC answering its requests.
 
 ## License

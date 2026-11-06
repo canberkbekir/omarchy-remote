@@ -6,3 +6,6 @@ __pycache__/
 .pytest_cache/
 /dist/
 omarchy-remote-windows-setup.exe
+/*.exe
+/*.zip
+/*.old

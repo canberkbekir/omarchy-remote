@@ -1,11 +1,11 @@
 #!/bin/bash
-# Draws the Windows tray icons into trayicons/: a phone with a pointer, in
+# Draws the Windows tray icons into internal/server/trayicons/: a phone with a pointer, in
 # six states for a dark and a light taskbar, and the app icon for the
 # installer. Needs rsvg-convert and magick.
 # Run it from the repo root after changing the drawing, and commit the result.
 set -euo pipefail
 
-out=trayicons
+out=internal/server/trayicons
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$out"
