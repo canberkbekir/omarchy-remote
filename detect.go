@@ -126,9 +126,9 @@ func detectSystem(dir string) system {
 	s.LANAddress = lanAddress()
 	s.LANSubnet = subnetOf(s.LANAddress)
 
-	if _, ok := lookPath("tailscale"); ok {
-		s.TailscaleName, s.Tailscale = tailscaleName()
-		if out, err := runCommand("tailscale", "serve", "status"); err == nil {
+	if tool, ok := tailscaleTool(); ok {
+		s.TailscaleName, s.Tailscale = tailscaleName(tool)
+		if out, err := runCommand(tool, "serve", "status"); err == nil {
 			s.TailscaleServing = servesPort(out, s.port())
 		}
 	}
@@ -258,8 +258,8 @@ func subnetOf(address string) string {
 	return ""
 }
 
-func tailscaleName() (string, bool) {
-	out, err := runCommand("tailscale", "status", "--json")
+func tailscaleName(tool string) (string, bool) {
+	out, err := runCommand(tool, "status", "--json")
 	if err != nil {
 		return "", false
 	}

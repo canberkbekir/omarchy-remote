@@ -363,11 +363,11 @@ func (w wizard) question() question {
 		switch {
 		case s.Tailscale:
 			both.tag = "Tailscale is on ✓"
-		case s.TailscaleName == "" && !hasTool("tailscale"):
+		case s.TailscaleName == "" && !hasTailscale():
 			both.disabled = "Needs Tailscale. Install it, then run setup again."
 			tailscale.disabled = both.disabled
 		default:
-			both.disabled = "Needs Tailscale. Log in with " + adminPrefix + "tailscale up, then run setup again."
+			both.disabled = "Needs Tailscale. " + tailscaleLogin + ", then run setup again."
 			tailscale.disabled = both.disabled
 		}
 		return question{
@@ -393,13 +393,17 @@ func (w wizard) question() question {
 		}
 
 	case stageTheme:
-		omarchy := choice{value: "omarchy", title: "Match my Omarchy theme",
-			desc: "When you change the theme here, the phone follows."}
-		if s.OmarchyTheme != "" {
-			omarchy.tag = "now: " + s.OmarchyTheme
+		var choices []choice
+		if omarchyDesktop {
+			omarchy := choice{value: "omarchy", title: "Match my Omarchy theme",
+				desc: "When you change the theme here, the phone follows."}
+			if s.OmarchyTheme != "" {
+				omarchy.tag = "now: " + s.OmarchyTheme
+			}
+			choices = append(choices, omarchy)
 		}
-		choices := []choice{omarchy, {value: "default", title: "Dark with a lime accent",
-			desc: "The app's own look. Stays the same whatever your desktop does."}}
+		choices = append(choices, choice{value: "default", title: "Dark with a lime accent",
+			desc: "The app's own look. Stays the same whatever your desktop does."})
 		for _, t := range s.CustomThemes {
 			choices = append(choices, choice{value: t, title: titleCase(strings.ReplaceAll(t, "-", " ")),
 				desc: "Your theme from " + tildePath(s.Dir) + "/themes/" + t + ".css"})
@@ -510,8 +514,8 @@ func ufwRules(from string, ports []int) string {
 	return strings.Join(rules, "; ")
 }
 
-func hasTool(name string) bool {
-	_, ok := lookPath(name)
+func hasTailscale() bool {
+	_, ok := tailscaleTool()
 	return ok
 }
 

@@ -110,7 +110,8 @@ func (a *app) handleConnect(w http.ResponseWriter, r *http.Request) {
 func connectAddress(dir string, c config) address {
 	s := system{Dir: dir, Existing: c, LANAddress: lanAddress()}
 	if viaTailscale(c.Access) {
-		s.TailscaleName, _ = tailscaleName()
+		tool, _ := tailscaleTool()
+		s.TailscaleName, _ = tailscaleName(tool)
 	}
 	return appAddresses(s, answers{Access: c.Access})[0]
 }

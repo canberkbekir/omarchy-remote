@@ -35,6 +35,8 @@ const (
 	elevationNote       = "asks Windows for permission"
 	elevateOnceNote     = "Windows asks for permission once, after you review."
 	tailscaleNeedsAdmin = false
+	tailscaleLogin      = "Log in from the Tailscale icon in the tray"
+	omarchyDesktop      = false
 	configRestartNote   = "# `pc-remote-web setup --yes` to restart it. See the README.\n\n"
 	restartHint         = "Restart Omarchy Remote to use it: pc-remote-web setup --yes"
 	notRunningProblem   = `Omarchy Remote isn't running. Start it with: schtasks /Run /TN "PC Remote"`
@@ -276,9 +278,23 @@ func shellExecuteRunas(exe, params string) error {
 	return nil
 }
 
+// tailscaleTool finds tailscale.exe: on PATH, or where its installer puts
+// it, which a console opened before the install doesn't have on PATH.
+func tailscaleTool() (string, bool) {
+	if path, err := exec.LookPath("tailscale"); err == nil {
+		return path, true
+	}
+	path := filepath.Join(os.Getenv("ProgramFiles"), "Tailscale", "tailscale.exe")
+	if _, err := os.Stat(path); err == nil {
+		return path, true
+	}
+	return "", false
+}
+
 func serveTailscale(port int) func() error {
 	return func() error {
-		cmd := exec.Command("tailscale", "serve", "--bg", strconv.Itoa(port))
+		tool, _ := tailscaleTool()
+		cmd := exec.Command(tool, "serve", "--bg", strconv.Itoa(port))
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return cmd.Run()
 	}

@@ -397,3 +397,46 @@ func TestUpdateHook(t *testing.T) {
 		t.Error("turned back on for someone who said no")
 	}
 }
+
+// Only Omarchy has a desktop theme for the phone to follow.
+func TestThemeChoicesFollowTheDesktop(t *testing.T) {
+	s := testSystem(t)
+	w := newWizard(s, defaultAnswers(s))
+	w.stage = stageTheme
+	var values []string
+	for _, c := range w.choices() {
+		values = append(values, c.value)
+	}
+	if got := slices.Contains(values, "omarchy"); got != omarchyDesktop {
+		t.Fatalf("theme choices %q: offers Omarchy %v, want %v", values, got, omarchyDesktop)
+	}
+	if !slices.Contains(values, "default") {
+		t.Fatalf("theme choices %q lack the default", values)
+	}
+}
+
+// A PC with Tailscale installed but logged out says how to log in there.
+func TestTailscaleLoginHint(t *testing.T) {
+	s := testSystem(t)
+	s.TailscaleName = "pc.tailnet.ts.net"
+	w := newWizard(s, defaultAnswers(s))
+	w.stage = stageConnect
+	for _, c := range w.choices() {
+		if c.value == "tailscale" && c.disabled != "Needs Tailscale. "+tailscaleLogin+", then run setup again." {
+			t.Fatalf("disabled = %q", c.disabled)
+		}
+	}
+}
+
+func TestOmarchyThemeOnlyOnOmarchy(t *testing.T) {
+	s := testSystem(t)
+	s.HasConfig = true
+	s.Existing.Theme = "omarchy"
+	want := "omarchy"
+	if !omarchyDesktop {
+		want = "default"
+	}
+	if got := defaultAnswers(s).Theme; got != want {
+		t.Fatalf("theme = %q, want %q", got, want)
+	}
+}

@@ -340,3 +340,20 @@ func TestInstallCommandText(t *testing.T) {
 		t.Errorf("installHint = %q, want %q", got, want)
 	}
 }
+
+// Tailscale's installer puts it in Program Files; a console opened before
+// that doesn't have it on PATH.
+func TestTailscaleToolFallsBackToProgramFiles(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	programs := t.TempDir()
+	t.Setenv("ProgramFiles", programs)
+	if tool, ok := tailscaleTool(); ok {
+		t.Fatalf("found %q with no Tailscale", tool)
+	}
+	exe := filepath.Join(programs, "Tailscale", "tailscale.exe")
+	os.MkdirAll(filepath.Dir(exe), 0o700)
+	os.WriteFile(exe, nil, 0o600)
+	if tool, ok := tailscaleTool(); !ok || tool != exe {
+		t.Fatalf("tailscaleTool = %q, %v; want %q", tool, ok, exe)
+	}
+}

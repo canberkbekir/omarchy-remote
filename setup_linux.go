@@ -20,6 +20,8 @@ const (
 	elevationNote       = "asks for your password"
 	elevateOnceNote     = "Asks for your password once, after you review."
 	tailscaleNeedsAdmin = true
+	tailscaleLogin      = "Log in with sudo tailscale up"
+	omarchyDesktop      = true // the phone can follow the Omarchy theme
 	configRestartNote   = "# `systemctl --user restart pc-remote-web`. See the README.\n\n"
 	restartHint         = "Restart the service to use it: systemctl --user restart pc-remote-web"
 	notRunningProblem   = "Omarchy Remote isn't running. Start it with: systemctl --user start pc-remote-web"
@@ -64,6 +66,12 @@ func firewallHint(from string, ports []int) string { return ufwRules(from, ports
 
 func firewallExplain(from string, ports []int) string {
 	return "Omarchy turns on the ufw firewall, which blocks every incoming connection unless a rule allows it. This adds: " + ufwRules(from, ports) + "."
+}
+
+// tailscaleTool is the tailscale command, if it is installed.
+func tailscaleTool() (string, bool) {
+	_, ok := lookPath("tailscale")
+	return "tailscale", ok
 }
 
 func serveTailscale(port int) func() error {

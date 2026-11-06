@@ -46,6 +46,10 @@ func defaultAnswers(s system) answers {
 			a.Theme = "omarchy"
 		}
 	}
+	// Without Omarchy there's no desktop theme to follow.
+	if !omarchyDesktop && a.Theme == "omarchy" {
+		a.Theme = "default"
+	}
 	// Turned on for a new setup; after that it stays as the owner left it.
 	a.AutoUpdate = s.OmarchyHooks != "" && (s.UpdateHook || !s.HasConfig)
 	a.Bar = s.BarPluginDir != "" && (s.BarPlugin || !s.HasConfig)
