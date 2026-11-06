@@ -11,6 +11,12 @@ env:
   # ViGEmClient is archived; this is its last commit. Its DLL lets the
   # Windows server drive ViGEmBus virtual controllers.
   VIGEM_CLIENT_REF: b66d02d57e32cc8595369c53418b843e958649b4
+  # The Windows installer is built with Inno Setup and bundles the ViGEmBus
+  # driver's installer; both are pinned by hash.
+  INNO_SETUP_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
+  INNO_SETUP_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
+  VIGEMBUS_URL: https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe
+  VIGEMBUS_SHA256: 89220a7865076b342892f98865f3499fb7c4cfd673159e89d352c360fd014c6a
 
 jobs:
   # Builds third-party code, so it gets only the read-only token.
@@ -52,11 +58,9 @@ jobs:
           name: vigem-client
           path: out/
 
-  release:
+  build:
     needs: vigem-client
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -86,8 +90,68 @@ jobs:
           cp vigem/ViGEmClient.dll vigem/ViGEmClient-LICENSE.txt LICENSE README.md "dist/$name/"
           (cd dist && zip -q -r -X "$name.zip" "$name")
           cp install.sh dist/
-          (cd dist && sha256sum *.tar.gz *.zip install.sh > checksums.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/install.sh
+            dist/pc-remote-windows-amd64/
+
+  # Runs third-party installers, so it gets only the read-only token.
+  windows-installer:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Get Inno Setup and the ViGEmBus installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory tools | Out-Null
+          function Get-Pinned($url, $sha, $file) {
+            Invoke-WebRequest $url -OutFile $file
+            if ((Get-FileHash $file -Algorithm SHA256).Hash -ne $sha) { throw "$file doesn't match its pinned hash" }
+          }
+          Get-Pinned $env:INNO_SETUP_URL $env:INNO_SETUP_SHA256 tools/innosetup.exe
+          Get-Pinned $env:VIGEMBUS_URL $env:VIGEMBUS_SHA256 tools/ViGEmBusSetup.exe
+          Start-Process tools/innosetup.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$PWD\tools\inno" -Wait
+          if (-not (Test-Path tools/inno/ISCC.exe)) { throw "Inno Setup didn't install" }
+      - name: Build PCRemoteSetup.exe
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          & tools/inno/ISCC.exe "/DAppVersion=$version" "/DSourceDir=$PWD\dist\pc-remote-windows-amd64" `
+            "/DViGEmBusSetup=$PWD\tools\ViGEmBusSetup.exe" packaging/windows/pc-remote.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: dist/PCRemoteSetup.exe
+
+  publish:
+    needs: [build, windows-installer]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer
+          path: dist
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes dist/*.tar.gz dist/*.zip dist/install.sh dist/checksums.txt
+        run: |
+          cd dist
+          sha256sum *.tar.gz *.zip PCRemoteSetup.exe install.sh > checksums.txt
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --generate-notes \
+            *.tar.gz *.zip PCRemoteSetup.exe install.sh checksums.txt

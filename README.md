@@ -383,9 +383,14 @@ sudo tailscale serve --https=443 off
 
 Windows 10 and 11 work too. The trackpad, keyboard, typing, clipboard, volume, mute, media keys, now playing, audio outputs, power, turning the screens off, brightness (DDC/CI monitors and laptop panels), the game controller, parties and the zoom lens work. The game controller needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) driver: `setup` offers to install it with winget (Windows asks for permission once), and `doctor` tells you if it's missing. ViGEmBus is no longer developed, but it is signed and still works. Night light needs Linux for now.
 
-1. Download `pc-remote-windows-amd64.zip` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and unzip it into a folder you keep, like `%LOCALAPPDATA%\Programs\pc-remote`.
-2. In that folder, run `pc-remote-web.exe setup`. It adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (it asks for administrator rights for that step only), starts the server, and shows the passcode QR code.
-3. Scan the QR code with your phone.
+1. Download `PCRemoteSetup.exe` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and run it. It isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": click **More info**, then **Run anyway**.
+2. The installer puts PC Remote in `%LOCALAPPDATA%\Programs\PC Remote` for your user only, without administrator rights. Tick **Install the game controller driver** if you want the game controller; Windows asks for permission for the driver.
+3. At the end, leave **Set up PC Remote now** ticked. Setup adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (Windows asks for permission for that step only), starts the server, and shows the passcode QR code.
+4. Scan the QR code with your phone.
+
+**PC Remote** in the Start menu runs setup again: to change settings or show the QR code. To uninstall, use Settings › Apps › PC Remote; it removes the logon task and the firewall rules, and asks whether to delete your settings and passcode too.
+
+Prefer no installer? Unzip `pc-remote-windows-amd64.zip` from the same release into a folder you keep and run `pc-remote-web.exe setup` there. `pc-remote-web.exe uninstall` (add `--purge` to delete the settings too) undoes setup; then delete the folder.
 
 A tray icon takes the place of the Omarchy bar icon. It lights up while your phone is connected, shows how many guests a party has, and gets an orange dot when Windows Firewall keeps phones out of the current network (it isn't Private); its tooltip says the same. It follows the taskbar's light or dark mode. Click it for a page with the app's QR code, its address and the passcode, which stays hidden until you click it. Right-click it to open the web app, start or end a party, or quit the server.
 

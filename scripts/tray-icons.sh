@@ -1,6 +1,7 @@
 #!/bin/bash
 # Draws the Windows tray icons into trayicons/: a phone with a pointer, in
-# six states for a dark and a light taskbar. Needs rsvg-convert and magick.
+# six states for a dark and a light taskbar, and the app icon for the
+# installer. Needs rsvg-convert and magick.
 # Run it from the repo root after changing the drawing, and commit the result.
 set -euo pipefail
 
@@ -65,3 +66,18 @@ for theme in dark light; do
 	done
 done
 echo "wrote $(ls "$out" | wc -l) icons to $out/"
+
+# The app's own icon, for the installer and the Apps list: the lit phone on
+# a dark tile, so it reads on light and dark backgrounds alike.
+app=packaging/windows/pc-remote.ico
+mkdir -p "$(dirname "$app")"
+pngs=()
+for size in 16 20 24 32 40 48 64 256; do
+	small=0
+	[ "$size" -le 20 ] && small=1
+	svg dark connected "$small" | sed 's#<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">#<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 20 20"><rect x="-2" y="-2" width="20" height="20" rx="4.5" fill="\#0E0F0C"/>#' > "$work/app.svg"
+	rsvg-convert -w "$size" -h "$size" "$work/app.svg" -o "$work/app-$size.png"
+	pngs+=("$work/app-$size.png")
+done
+magick "${pngs[@]}" "$app"
+echo "wrote $app"
