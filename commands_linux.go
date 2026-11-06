@@ -19,6 +19,9 @@ Usage:
 Run without a command, pc-remote-web starts the server.
 `
 
+// platformCommand runs the OS-only commands; Linux has none.
+func platformCommand([]string, io.Writer) (int, bool) { return 0, false }
+
 // doctorHostLines adds the Linux checks to the "This PC" list.
 func doctorHostLines(_ io.Writer, _ styles, _ system, line func(bool, string, string)) {
 	_, helper := lookPath("pc-remote")

@@ -52,6 +52,9 @@ func runCommandLine(args []string, out io.Writer) (int, bool) {
 		fmt.Fprint(out, usage)
 		return 0, true
 	}
+	if code, handled := platformCommand(args, out); handled {
+		return code, true
+	}
 	fmt.Fprintf(out, "Unknown command %q.\n\n%s", args[0], usage)
 	return 2, true
 }

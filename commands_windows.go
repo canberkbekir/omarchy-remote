@@ -15,6 +15,8 @@ Usage:
   pc-remote-web update             install the latest release
   pc-remote-web status             say whether it runs and a phone is connected
   pc-remote-web version            show the version
+  pc-remote-web uninstall          stop it and remove the logon task and firewall rules
+  pc-remote-web uninstall --purge  the same, and delete the settings and passcode
 
 Run without a command, pc-remote-web starts the server.
 `

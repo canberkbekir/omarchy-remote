@@ -158,6 +158,19 @@ var systemDir = func() (string, error) { return windows.GetSystemDirectory() }
 // per port, so Windows asks once. The ports are numbers and the paths come
 // from Windows, so nothing in it needs quoting.
 func firewallCommand(ports []int) (exe, params string, err error) {
+	return netshCommand(ports, addFirewallRuleArgv, " && ")
+}
+
+// firewallDeleteCommand removes the rules setup added. Each delete runs even
+// when one before it fails, so a rule removed by hand doesn't stop the rest.
+func firewallDeleteCommand(ports []int) (exe, params string, err error) {
+	return netshCommand(ports, func(port int) []string {
+		return []string{"netsh", "advfirewall", "firewall", "delete", "rule", "name=" + firewallRuleName(port)}
+	}, " & ")
+}
+
+// netshCommand is cmd.exe /c with one netsh per port, joined by join.
+func netshCommand(ports []int, argvFor func(int) []string, join string) (exe, params string, err error) {
 	dir, err := systemDir()
 	if err != nil {
 		return "", "", err
@@ -167,11 +180,11 @@ func firewallCommand(ports []int) (exe, params string, err error) {
 	}
 	var rules []string
 	for _, p := range ports {
-		argv := addFirewallRuleArgv(p)
+		argv := argvFor(p)
 		argv[0] = filepath.Join(dir, "netsh.exe")
 		rules = append(rules, strings.Join(argv, " "))
 	}
-	return filepath.Join(dir, "cmd.exe"), "/c " + strings.Join(rules, " && "), nil
+	return filepath.Join(dir, "cmd.exe"), "/c " + strings.Join(rules, join), nil
 }
 
 // firewallActions opens every blocked port in one elevated run.
