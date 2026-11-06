@@ -387,7 +387,7 @@ Windows 10 and 11 work too. The trackpad, keyboard, typing, clipboard, volume, m
 2. In that folder, run `pc-remote-web.exe setup`. It adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (it asks for administrator rights for that step only), starts the server, and shows the passcode QR code.
 3. Scan the QR code with your phone.
 
-A tray icon takes the place of the Omarchy bar icon. Its tooltip says whether your phone is connected. Click it for a page with the app's QR code, its address and the passcode, which stays hidden until you click it. Right-click it to open the web app, start or end a party, or quit the server.
+A tray icon takes the place of the Omarchy bar icon. It lights up while your phone is connected, shows how many guests a party has, and gets an orange dot when Windows Firewall keeps phones out of the current network (it isn't Private); its tooltip says the same. It follows the taskbar's light or dark mode. Click it for a page with the app's QR code, its address and the passcode, which stays hidden until you click it. Right-click it to open the web app, start or end a party, or quit the server.
 
 Your network must be set to **Private** in Windows settings: the firewall blocks the phone on a Public network. `pc-remote-web.exe doctor` checks this and the rest of the setup. `pc-remote-web.exe update` installs the latest release and restarts the server.
 

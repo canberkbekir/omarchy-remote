@@ -1,24 +1,40 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
-// The tray icon: Windows' stand-in for the Omarchy bar widget. Its tooltip
-// says whether a phone is connected; clicking it shows the passcode page, and
-// its menu opens the app, starts or ends a party, or quits.
+// The tray icon: Windows' stand-in for the Omarchy bar widget. The icon and
+// its tooltip say whether a phone is connected, how many guests a party has,
+// and whether the network keeps phones out; clicking it shows the passcode
+// page, and its menu opens the app, starts or ends a party, or quits.
 
-//go:embed tray.ico
-var trayIcon []byte
+// The icons, one per state for a dark and a light taskbar, drawn by
+// scripts/tray-icons.sh.
+//
+//go:embed trayicons
+var trayIcons embed.FS
+
+const (
+	// How often the tray checks the network category; it runs PowerShell.
+	trayNetworkEvery = time.Minute
+	// How often it asks GitHub for the latest release.
+	trayUpdateEvery = 6 * time.Hour
+)
 
 var (
 	trayUser32                 = windows.NewLazySystemDLL("user32.dll")
@@ -46,15 +62,16 @@ var (
 )
 
 const (
-	wmNull        = 0x0000
-	wmContextMenu = 0x007B
-	wmEndSession  = 0x0016
-	wmTimer       = 0x0113
-	wmApp         = 0x8000
-	trayCallback  = wmApp + 1 // the icon's mouse and keyboard events
-	trayQuitMsg   = wmApp + 2 // Quit from the menu, run on the tray thread
-	ninSelect     = 0x0400    // WM_USER: click, with NOTIFYICON_VERSION_4
-	ninKeySelect  = 0x0401    // Enter or Space on the icon
+	wmNull          = 0x0000
+	wmContextMenu   = 0x007B
+	wmSettingChange = 0x001A
+	wmEndSession    = 0x0016
+	wmTimer         = 0x0113
+	wmApp           = 0x8000
+	trayCallback    = wmApp + 1 // the icon's mouse and keyboard events
+	trayQuitMsg     = wmApp + 2 // Quit from the menu, run on the tray thread
+	ninSelect       = 0x0400    // WM_USER: click, with NOTIFYICON_VERSION_4
+	ninKeySelect    = 0x0401    // Enter or Space on the icon
 
 	nimAdd        = 0
 	nimModify     = 1
@@ -64,6 +81,8 @@ const (
 	nifIcon       = 0x02
 	nifTip        = 0x04
 	nifShowTip    = 0x80
+	nifInfo       = 0x10
+	niifInfo      = 0x01
 	notifyIconV4  = 4
 
 	wsPopup      = 0x80000000
@@ -133,6 +152,12 @@ type tray struct {
 	base           string // the server's local address
 	wnd            windows.HWND
 	icon           windows.Handle
+	iconName       string                    // the icon showing
+	icons          map[string]windows.Handle // loaded icons, by name
+	loopback       bool                      // the server only takes this PC
+	warn           atomic.Bool               // the network keeps phones out
+	latest         atomic.Pointer[string]    // the latest release, once checked
+	announced      string                    // the release the balloon told about
 	taskbarCreated uint32
 	added          bool
 	tip            string
@@ -149,8 +174,11 @@ func desktopIntegration(a *app, addr string) {
 		log.Printf("tray: %v", err)
 		return
 	}
+	host, _, _ := net.SplitHostPort(addr)
+	ip := net.ParseIP(host)
+	loopback := host == "localhost" || ip != nil && ip.IsLoopback()
 	go func() {
-		if err := runTray(a, base); err != nil {
+		if err := runTray(a, base, loopback); err != nil {
 			log.Printf("tray icon: %v", err)
 		}
 	}()
@@ -158,14 +186,12 @@ func desktopIntegration(a *app, addr string) {
 
 // runTray owns the icon's window, so it keeps its OS thread: Windows sends a
 // window's messages to the thread that made it.
-func runTray(a *app, base string) error {
+func runTray(a *app, base string, loopback bool) error {
 	runtime.LockOSThread()
-	t := &tray{app: a, base: base}
-	icon, err := loadTrayIcon()
-	if err != nil {
+	t := &tray{app: a, base: base, loopback: loopback, icons: map[string]windows.Handle{}}
+	if err := t.look(); err != nil {
 		return err
 	}
-	t.icon = icon
 
 	instance, _, _ := procGetModuleHandle.Call(0)
 	className, _ := windows.UTF16PtrFromString("PCRemoteTray")
@@ -191,6 +217,8 @@ func runTray(a *app, base string) error {
 	r, _, _ := procRegisterWindowMessage.Call(uintptr(unsafe.Pointer(created)))
 	t.taskbarCreated = uint32(r)
 	activeTray.Store(t)
+	go t.watchNetwork()
+	go t.watchUpdates()
 
 	// At logon the server can start before explorer: the timer retries, and
 	// TaskbarCreated adds the icon once the taskbar is up.
@@ -213,12 +241,16 @@ func runTray(a *app, base string) error {
 	}
 }
 
-// loadTrayIcon makes the embedded icon at the size the notification area
-// draws, picking the best image from tray.ico.
-func loadTrayIcon() (windows.Handle, error) {
+// loadTrayIcon makes an embedded icon at the size the notification area
+// draws, picking the best image from the .ico.
+func loadTrayIcon(name string) (windows.Handle, error) {
+	ico, err := trayIcons.ReadFile(name)
+	if err != nil {
+		return 0, err
+	}
 	cx, _, _ := procGetSystemMetrics.Call(smCxSmIcon)
 	cy, _, _ := procGetSystemMetrics.Call(smCySmIcon)
-	image, err := pickIcon(trayIcon, int(cx))
+	image, err := pickIcon(ico, int(cx))
 	if err != nil {
 		return 0, err
 	}
@@ -243,9 +275,134 @@ func notify(message uint32, d *notifyIconData) bool {
 	return r != 0
 }
 
+// lightTaskbar reports whether Windows draws a light taskbar.
+func lightTaskbar() bool {
+	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer key.Close()
+	light, _, err := key.GetIntegerValue("SystemUsesLightTheme")
+	return err == nil && light == 1
+}
+
+// look picks the icon and tooltip for the phone, the party, the network and
+// the taskbar's theme, and reports an icon it couldn't load.
+func (t *tray) look() error {
+	warn := t.warn.Load()
+	p := t.app.presence()
+	t.tip = trayTip(t.app.name, p, warn)
+	name := trayIconName(lightTaskbar(), trayState(p, warn))
+	if name == t.iconName {
+		return nil
+	}
+	icon, ok := t.icons[name]
+	if !ok {
+		var err error
+		if icon, err = loadTrayIcon(name); err != nil {
+			return err
+		}
+		t.icons[name] = icon
+	}
+	t.icon, t.iconName = icon, name
+	return nil
+}
+
+// watchNetwork checks now and then whether the network keeps phones out:
+// the firewall rules only open Private networks.
+func (t *tray) watchNetwork() {
+	for {
+		if !t.loopback {
+			category, err := networkCategory(lanAddress())
+			if warn := networkWarns(category, err, t.loopback); warn != t.warn.Load() {
+				t.warn.Store(warn)
+				procPostMessage.Call(uintptr(t.wnd), wmTimer, 0, 0) // refresh now
+			}
+		}
+		time.Sleep(trayNetworkEvery)
+	}
+}
+
+// watchUpdates asks GitHub for the latest release now and then. A build
+// from source can't tell what's newer, so it doesn't ask.
+func (t *tray) watchUpdates() {
+	if _, ok := parseVersion(versionString()); !ok {
+		return
+	}
+	for {
+		if latest, err := latestVersion(10 * time.Second); err == nil {
+			t.latest.Store(&latest)
+			procPostMessage.Call(uintptr(t.wnd), wmTimer, 0, 0) // refresh now
+		}
+		time.Sleep(trayUpdateEvery)
+	}
+}
+
+func (t *tray) latestRelease() string {
+	if latest := t.latest.Load(); latest != nil {
+		return *latest
+	}
+	return ""
+}
+
+// announceUpdate shows a notification, once per release, when one newer
+// than this server is out.
+func (t *tray) announceUpdate() {
+	latest := t.latestRelease()
+	if !t.added || latest == t.announced || !updateAvailable(versionString(), latest) {
+		return
+	}
+	d := t.data(nifInfo)
+	title, _ := windows.UTF16FromString("Update available")
+	info, _ := windows.UTF16FromString(latest + " is out. Right-click the icon to update.")
+	copy(d.InfoTitle[:len(d.InfoTitle)-1], title)
+	copy(d.Info[:len(d.Info)-1], info)
+	d.InfoFlags = niifInfo
+	if notify(nimModify, &d) {
+		t.announced = latest
+	}
+}
+
+// trayUpdateScript runs the updater and waits for a key: the updater stops
+// this server, so only its own console can show how it went.
+func trayUpdateScript(exe string) string {
+	return "@echo off\r\n\"" + exe + "\" update\r\npause\r\n"
+}
+
+// startUpdater runs the updater through explorer. The logon task runs this
+// server in a job, and the updater ends the task, which kills everything in
+// the job; explorer starts it as its own child, outside the job.
+func startUpdater() {
+	exe, err := executable()
+	if err != nil {
+		log.Printf("tray: finding this program: %v", err)
+		return
+	}
+	dir, err := configDir()
+	if err != nil {
+		log.Printf("tray: %v", err)
+		return
+	}
+	script := filepath.Join(dir, "update.cmd")
+	if err := writeNew(script, []byte(trayUpdateScript(exe))); err != nil {
+		log.Printf("tray: writing the updater script: %v", err)
+		return
+	}
+	windir, err := windows.GetWindowsDirectory()
+	if err != nil {
+		log.Printf("tray: %v", err)
+		return
+	}
+	if err := exec.Command(filepath.Join(windir, "explorer.exe"), script).Start(); err != nil {
+		log.Printf("tray: starting the updater: %v", err)
+	}
+}
+
 // add puts the icon in the notification area, as after explorer restarts.
 func (t *tray) add() {
-	t.tip = trayTip(t.app.name, t.app.presence())
+	if err := t.look(); err != nil {
+		log.Printf("tray icon: %v", err)
+	}
 	d := t.data(nifMessage | nifIcon | nifTip | nifShowTip)
 	notify(nimDelete, &d) // a leftover icon from before a restart makes NIM_ADD fail
 	if !notify(nimAdd, &d) {
@@ -263,12 +420,15 @@ func (t *tray) refresh() {
 		t.add()
 		return
 	}
-	tip := trayTip(t.app.name, t.app.presence())
-	if tip == t.tip {
+	tip, name := t.tip, t.iconName
+	if err := t.look(); err != nil {
+		log.Printf("tray icon: %v", err)
+	}
+	t.announceUpdate()
+	if t.tip == tip && t.iconName == name {
 		return
 	}
-	t.tip = tip
-	d := t.data(nifTip | nifShowTip)
+	d := t.data(nifIcon | nifTip | nifShowTip)
 	if !notify(nimModify, &d) {
 		t.add() // the taskbar went away without telling us
 	}
@@ -300,7 +460,8 @@ func (t *tray) windowProc(wnd, message, wParam, lParam uintptr) uintptr {
 	case uint32(message) == t.taskbarCreated && t.taskbarCreated != 0:
 		t.add()
 		return 0
-	case message == wmTimer:
+	case message == wmTimer, message == wmSettingChange:
+		// The timer, a new network verdict, or a new taskbar theme.
 		t.refresh()
 		return 0
 	case message == wmEndSession && wParam != 0:
@@ -350,6 +511,7 @@ func (t *tray) menu(x, y int32) {
 	}
 	item(party, trayParty, label)
 	item(mfSeparator, 0, "")
+	item(mfString, trayUpdate, trayUpdateLabel(versionString(), t.latestRelease()))
 	item(mfString, trayQuit, "Quit")
 	procSetMenuDefaultItem.Call(menu, trayShowPasscode, 0)
 
@@ -365,8 +527,10 @@ func (t *tray) menu(x, y int32) {
 // command runs a menu command off the tray thread: opening the browser or
 // the guest port can take a moment, and the icon must keep answering.
 func (t *tray) command(id int) {
-	go t.app.trayCommand(id, t.base, openBrowser, func() {
-		procPostMessage.Call(uintptr(t.wnd), trayQuitMsg, 0, 0)
+	go t.app.trayCommand(id, t.base, trayActions{
+		open:   openBrowser,
+		update: startUpdater,
+		quit:   func() { procPostMessage.Call(uintptr(t.wnd), trayQuitMsg, 0, 0) },
 	})
 }
 

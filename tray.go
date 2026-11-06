@@ -14,8 +14,8 @@ import (
 const trayTipMax = 127
 
 // trayTip is the tray icon's tooltip: the app's name and whether a phone is
-// connected, plus the party when one runs.
-func trayTip(name string, p presence) string {
+// connected, plus the party when one runs, and why the icon warns.
+func trayTip(name string, p presence, warn bool) string {
 	name = strings.ReplaceAll(name, "\x00", "") // Windows strings end at a NUL
 	if name == "" {
 		name = "Omarchy Remote"
@@ -36,6 +36,9 @@ func trayTip(name string, p presence) string {
 		}
 		fmt.Fprintf(&tip, " · party %s %d/%d", p.Party.Code, joined, lastGuestSlot-firstGuestSlot+1)
 	}
+	if warn {
+		tip.WriteString(" · the firewall blocks this network")
+	}
 	// Cut on a rune boundary; every rune counted here fits in one UTF-16
 	// unit or two, so count units, not runes.
 	units, out := 0, []rune{}
@@ -53,17 +56,90 @@ func trayTip(name string, p presence) string {
 	return string(out)
 }
 
+// trayState picks the tray icon: a warning first, then the guests in a
+// party, then whether a phone is connected.
+func trayState(p presence, warn bool) string {
+	joined := 0
+	if p.Party.Active {
+		for _, player := range p.Party.Players {
+			if player.Connected {
+				joined++
+			}
+		}
+	}
+	switch {
+	case warn:
+		return "warning"
+	case joined > 0:
+		return fmt.Sprintf("party%d", min(joined, lastGuestSlot-firstGuestSlot+1))
+	case p.Phone:
+		return "connected"
+	}
+	return "idle"
+}
+
+// trayIconName is the icon for a state, drawn for a light or a dark taskbar
+// by scripts/tray-icons.sh.
+func trayIconName(light bool, state string) string {
+	theme := "dark"
+	if light {
+		theme = "light"
+	}
+	return "trayicons/" + theme + "-" + state + ".ico"
+}
+
+func trayIconNames() []string {
+	var names []string
+	for _, light := range []bool{false, true} {
+		for _, state := range []string{"idle", "connected", "party1", "party2", "party3", "warning"} {
+			names = append(names, trayIconName(light, state))
+		}
+	}
+	return names
+}
+
+// networkWarns reports whether the tray should warn about the network: the
+// firewall rules only open Private networks, so on any other one the phone
+// can't get in. A server only this PC uses, or a category Windows didn't
+// give, doesn't warn.
+func networkWarns(category string, err error, loopback bool) bool {
+	return err == nil && !loopback && category != "" && category != "Private"
+}
+
 // The tray menu's commands. Left-clicking the icon runs trayShowPasscode.
 const (
 	trayShowPasscode = 1 + iota
 	trayOpenApp
 	trayParty
+	trayUpdate
 	trayQuit
 )
 
+// trayActions are what tray commands do outside the app; tests fake them.
+type trayActions struct {
+	open   func(url string) error // shows a page in the browser
+	quit   func()
+	update func() // runs the updater, which replaces this server
+}
+
+// trayUpdateLabel names the update item: the release to get when a newer
+// one is out, or a check. A build from source can't tell what's newer.
+func trayUpdateLabel(current, latest string) string {
+	if updateAvailable(current, latest) {
+		return "Update to " + latest
+	}
+	return "Check for updates"
+}
+
+// updateAvailable reports whether latest is a release newer than current.
+func updateAvailable(current, latest string) bool {
+	_, ok := parseVersion(current)
+	return ok && latest != "" && newerVersion(latest, current)
+}
+
 // trayCommand runs a tray menu command. base is the server's local address;
-// open shows a page in the browser.
-func (a *app) trayCommand(id int, base string, open func(url string) error, quit func()) {
+// do carries what commands do outside the app.
+func (a *app) trayCommand(id int, base string, do trayActions) {
 	switch id {
 	case trayShowPasscode:
 		ticket, err := a.tickets.mint()
@@ -71,11 +147,11 @@ func (a *app) trayCommand(id int, base string, open func(url string) error, quit
 			log.Printf("tray: %v", err)
 			return
 		}
-		if err := open(base + "/connect.html#" + ticket); err != nil {
+		if err := do.open(base + "/connect.html#" + ticket); err != nil {
 			log.Printf("tray: opening the passcode page: %v", err)
 		}
 	case trayOpenApp:
-		if err := open(base + "/"); err != nil {
+		if err := do.open(base + "/"); err != nil {
 			log.Printf("tray: opening the app: %v", err)
 		}
 	case trayParty:
@@ -84,8 +160,10 @@ func (a *app) trayCommand(id int, base string, open func(url string) error, quit
 		} else if err := a.startParty(); err != nil {
 			log.Printf("tray: starting a party: %v", err)
 		}
+	case trayUpdate:
+		do.update()
 	case trayQuit:
-		quit()
+		do.quit()
 	}
 }
 

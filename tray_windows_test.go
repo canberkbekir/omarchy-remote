@@ -26,17 +26,29 @@ func TestTrayStructSizes(t *testing.T) {
 	}
 }
 
-func TestLoadTrayIcon(t *testing.T) {
-	icon, err := loadTrayIcon()
-	if err != nil || icon == 0 {
-		t.Fatalf("loadTrayIcon() = %v, %v", icon, err)
+func TestLoadTrayIcons(t *testing.T) {
+	for _, name := range trayIconNames() {
+		icon, err := loadTrayIcon(name)
+		if err != nil || icon == 0 {
+			t.Fatalf("loadTrayIcon(%q) = %v, %v", name, icon, err)
+		}
 	}
 }
 
 func TestTrayTipFitsTheStruct(t *testing.T) {
-	tr := &tray{tip: trayTip(string(make([]rune, 400)), presence{Phone: true})}
+	tr := &tray{tip: trayTip(string(make([]rune, 400)), presence{Phone: true}, true)}
 	d := tr.data(nifTip)
 	if d.Tip[len(d.Tip)-1] != 0 {
 		t.Error("tooltip isn't zero-terminated")
+	}
+}
+
+// The updater script runs the update, then waits so its result stays
+// readable after the server it replaces is gone.
+func TestTrayUpdateScript(t *testing.T) {
+	got := trayUpdateScript(`C:\Users\me\pc-remote\pc-remote-web.exe`)
+	want := "@echo off\r\n\"C:\\Users\\me\\pc-remote\\pc-remote-web.exe\" update\r\npause\r\n"
+	if got != want {
+		t.Fatalf("script\n got %q\nwant %q", got, want)
 	}
 }
