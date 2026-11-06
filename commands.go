@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
-	"strings"
 	"time"
 )
 
@@ -113,7 +112,7 @@ func runDoctor(out io.Writer) int {
 		if !c.OK {
 			detail = c.Detail
 			if len(c.Fix) > 0 {
-				detail += st.dim.Render(" · sudo pacman -S " + strings.Join(c.Fix, " "))
+				detail += st.dim.Render(" · " + installHint(c.Fix))
 			}
 		}
 		line(c.OK, c.Label, detail)

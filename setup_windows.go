@@ -81,8 +81,42 @@ func commandError(err error, out string) error {
 	return err
 }
 
-func installPackages([]string) func() error {
-	return func() error { return errors.New("there's nothing to install on Windows") }
+// installHint is the command that installs packages, for setup and doctor.
+func installHint(packages []string) string {
+	return "winget install --exact --id " + strings.Join(packages, " ")
+}
+
+// wingetPath is where Windows puts winget for the signed-in user. It runs
+// from there, never found on PATH.
+func wingetPath() string {
+	return filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "WindowsApps", "winget.exe")
+}
+
+// installPackages installs each package with winget. The only one so far is
+// the ViGEmBus driver, whose installer asks Windows for permission itself.
+func installPackages(packages []string) func() error {
+	return func() error {
+		winget := wingetPath()
+		if _, err := os.Stat(winget); err != nil {
+			return errors.New("winget isn't installed, so install ViGEmBus from " + vigemBusURL + " yourself")
+		}
+		for _, p := range packages {
+			err := runInteractive(winget, "install", "--exact", "--id", p, "--silent",
+				"--accept-package-agreements", "--accept-source-agreements")
+			if err != nil {
+				return fmt.Errorf("winget couldn't install %s: %w", p, err)
+			}
+		}
+		return nil
+	}
+}
+
+// runInteractive runs a program in this console, so its progress shows;
+// tests swap it for a fake.
+var runInteractive = func(exe string, args ...string) error {
+	cmd := exec.Command(exe, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
 }
 
 func firewallRuleName(port int) string { return "PC-Remote-" + strconv.Itoa(port) }

@@ -350,7 +350,7 @@ func (w wizard) question() question {
 		return question{
 			title: "Install what's missing?",
 			choices: []choice{
-				{value: "yes", title: "Install it", desc: "Runs sudo pacman -S " + strings.Join(packages, " ") + " after you review."},
+				{value: "yes", title: "Install it", desc: "Runs " + installHint(packages) + " after you review."},
 				{value: "no", title: "Skip for now", desc: "Those features won't work until it's installed."},
 			},
 		}

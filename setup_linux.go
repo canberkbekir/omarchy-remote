@@ -33,6 +33,11 @@ func sudo(argv ...string) func() error {
 	}
 }
 
+// installHint is the command that installs packages, for setup and doctor.
+func installHint(packages []string) string {
+	return "sudo pacman -S " + strings.Join(packages, " ")
+}
+
 func installPackages(packages []string) func() error {
 	return sudo(append([]string{"pacman", "-S", "--needed", "--noconfirm"}, packages...)...)
 }

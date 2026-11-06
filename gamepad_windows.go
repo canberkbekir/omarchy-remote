@@ -20,8 +20,10 @@ import (
 // turns them into the XUSB_REPORT ViGEmBus hands to games.
 
 const (
-	vigemBusURL    = "https://github.com/nefarius/ViGEmBus/releases"
-	vigemClientDLL = "ViGEmClient.dll"
+	vigemBusURL = "https://github.com/nefarius/ViGEmBus/releases"
+	// vigemBusPackage is the driver's winget package, which setup installs.
+	vigemBusPackage = "ViGEm.ViGEmBus"
+	vigemClientDLL  = "ViGEmClient.dll"
 
 	vigemErrorNone               = 0x20000000
 	vigemErrorBusNotFound        = 0xE0000001
@@ -270,6 +272,9 @@ func checkGamepad() check {
 	c := check{Label: "Game controller"}
 	if err := vigemReady(); err != nil {
 		c.Detail = err.Error()
+		if errors.Is(err, errNoViGEmBus) {
+			c.Fix = []string{vigemBusPackage}
+		}
 	} else {
 		c.OK = true
 	}

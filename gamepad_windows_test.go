@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,19 @@ func TestGamepadCheck(t *testing.T) {
 	vigemReady = func() error { return vigemError("connecting", vigemErrorBusNotFound) }
 	if c := checkGamepad(); c.OK || !strings.Contains(c.Detail, vigemBusURL) {
 		t.Fatalf("got %+v", c)
+	}
+	// Setup offers to install the driver, and only the driver: a missing
+	// ViGEmClient.dll means reinstalling pc-remote.
+	if c := checkGamepad(); !slices.Equal(c.Fix, []string{vigemBusPackage}) {
+		t.Fatalf("driver missing: Fix = %q, want %q", c.Fix, vigemBusPackage)
+	}
+	vigemReady = func() error { return errors.New("can't load ViGEmClient.dll") }
+	if c := checkGamepad(); len(c.Fix) != 0 {
+		t.Fatalf("DLL missing: Fix = %q, want none", c.Fix)
+	}
+	vigemReady = func() error { return nil }
+	if c := checkGamepad(); len(c.Fix) != 0 {
+		t.Fatalf("ready: Fix = %q, want none", c.Fix)
 	}
 }
 

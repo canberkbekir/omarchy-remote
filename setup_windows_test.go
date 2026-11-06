@@ -299,3 +299,44 @@ func TestUsageWindows(t *testing.T) {
 		t.Errorf("usage = %s", out.String())
 	}
 }
+
+// Setup installs what's missing with winget, by its full path, one package
+// at a time, so the driver's installer can ask for permission itself.
+func TestInstallPackagesWithWinget(t *testing.T) {
+	defer func(old func(string, ...string) error) { runInteractive = old }(runInteractive)
+	local := t.TempDir()
+	t.Setenv("LOCALAPPDATA", local)
+	var ran [][]string
+	runInteractive = func(exe string, args ...string) error {
+		ran = append(ran, append([]string{exe}, args...))
+		return nil
+	}
+
+	err := installPackages([]string{vigemBusPackage})()
+	if err == nil || !strings.Contains(err.Error(), vigemBusURL) || len(ran) != 0 {
+		t.Fatalf("without winget: err %v, ran %q; want the download link and nothing run", err, ran)
+	}
+
+	winget := filepath.Join(local, "Microsoft", "WindowsApps", "winget.exe")
+	os.MkdirAll(filepath.Dir(winget), 0o700)
+	os.WriteFile(winget, nil, 0o600)
+	if err := installPackages([]string{vigemBusPackage})(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{winget, "install", "--exact", "--id", vigemBusPackage, "--silent",
+		"--accept-package-agreements", "--accept-source-agreements"}
+	if len(ran) != 1 || !slices.Equal(ran[0], want) {
+		t.Fatalf("ran %q, want %q", ran, want)
+	}
+
+	runInteractive = func(string, ...string) error { return errors.New("exit status 1") }
+	if err := installPackages([]string{vigemBusPackage})(); err == nil || !strings.Contains(err.Error(), vigemBusPackage) {
+		t.Fatalf("a failed install: err = %v", err)
+	}
+}
+
+func TestInstallCommandText(t *testing.T) {
+	if got, want := installHint([]string{vigemBusPackage}), "winget install --exact --id ViGEm.ViGEmBus"; got != want {
+		t.Errorf("installHint = %q, want %q", got, want)
+	}
+}
