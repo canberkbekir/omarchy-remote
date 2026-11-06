@@ -1,7 +1,7 @@
 #!/bin/bash
 # Draws the Windows tray icons into internal/server/trayicons/: a phone with a pointer, in
-# six states for a dark and a light taskbar, and the app icon for the
-# installer. Needs rsvg-convert and magick.
+# six states for a dark and a light taskbar, the app icon for the installer,
+# and the web app's icons (home screen and browser tab). Needs rsvg-convert and magick.
 # Run it from the repo root after changing the drawing, and commit the result.
 set -euo pipefail
 
@@ -81,3 +81,11 @@ for size in 16 20 24 32 40 48 64 256; do
 done
 magick "${pngs[@]}" "$app"
 echo "wrote $app"
+
+# The web app's icons: the same lit phone, on a full square tile. Phones round
+# the corners themselves, and the tile leaves room for that.
+for size in 180 512; do
+	svg dark connected 0 | sed 's#<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">#<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3.5 -3.5 23 23"><rect x="-3.5" y="-3.5" width="23" height="23" fill="\#0E0F0C"/>#' > "$work/web.svg"
+	rsvg-convert -w "$size" -h "$size" "$work/web.svg" -o "web/icon-$size.png"
+done
+echo "wrote web/icon-180.png and web/icon-512.png"

@@ -1,4 +1,4 @@
-const CACHE = 'pc-remote-v6';
+const CACHE = 'pc-remote-v7';
 const SHELL = ['/', '/base.css', '/gamepad.js', '/app.js', '/theme.css', '/user.css', '/manifest.webmanifest', '/icon-180.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
