@@ -10,6 +10,26 @@
 //   onStatus({ ready, connecting, delay }), onEnded(reason), onError(error)
 // It returns { sync, open }: sync after the page changes what isActive() says,
 // and open to show the controller without turning the phone.
+// iOS Safari ignores user-scalable=no and only partly honours touch-action, so
+// two thumbs on the controller read as a pinch and quick taps as a double-tap
+// zoom. Cancel both on the surfaces that take raw touches; the rest of the
+// page keeps pinch-zoom.
+(() => {
+  const SURFACES = '.gamepad, .keyboard, .pad-card';
+  const onSurface = (event) => event.target instanceof Element && event.target.closest(SURFACES);
+  const block = (event) => { if (onSurface(event)) event.preventDefault(); };
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend', 'dblclick']) {
+    document.addEventListener(type, block, { passive: false });
+  }
+  document.addEventListener('touchmove', block, { passive: false });
+  let lastEnd = 0;
+  document.addEventListener('touchend', (event) => {
+    const now = event.timeStamp;
+    if (now - lastEnd < 350) block(event);
+    lastEnd = now;
+  }, { passive: false });
+})();
+
 function setupGamepad(options) {
   const $ = (id) => document.getElementById(id);
   const landscape = matchMedia('(orientation: landscape)');
