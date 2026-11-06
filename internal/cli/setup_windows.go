@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"encoding/xml"
@@ -548,4 +549,20 @@ func prepareConsole() {
 			windows.SetConsoleMode(h, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
 		}
 	}
+}
+
+var procGetConsoleProcessList = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleProcessList")
+
+// holdConsole waits for Enter when setup has the console to itself, as it
+// does when started from the Start menu or the installer: Windows closes
+// that window as soon as setup ends, which would take the QR code with it.
+// Started from a shell, the shell keeps the window and this returns at once.
+func holdConsole(out io.Writer) {
+	list := make([]uint32, 4)
+	n, _, _ := procGetConsoleProcessList.Call(uintptr(unsafe.Pointer(&list[0])), uintptr(len(list)))
+	if n != 1 {
+		return
+	}
+	fmt.Fprint(out, "\n  Press Enter to close this window.")
+	bufio.NewReader(os.Stdin).ReadString('\n')
 }

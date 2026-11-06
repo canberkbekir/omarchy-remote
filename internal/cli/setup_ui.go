@@ -778,7 +778,7 @@ func readyCard(st styles, addresses []Address, passcode string, width int) strin
 		rows.WriteString(st.dim.Render(fmt.Sprintf("%-10s", a.Label)) + st.code.Render(a.URL) + "\n")
 	}
 	body := st.good.Render("✓ Ready") + "\n\n" + top + "\n\n" + rows.String() +
-		st.dim.Render("Passcode  ") + st.title.Render(groupPasscode(passcode)) + st.dim.Render("   spaces don't matter")
+		st.dim.Render("Passcode  ") + st.title.Render(passcode)
 	card := st.r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("2")).Padding(1, 3).Render(body)
 	return indent(card, 2)
 }

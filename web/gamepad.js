@@ -6,7 +6,8 @@
 //   player()       the player number to show
 //   isActive()     whether the page wants the controller (its tab is showing)
 //   canEdit        whether the layout can be edited and saved
-//   loadLayout(), saveLayout(layout)   promises; omitted for guests
+//   loadLayout(), saveLayout(layout)   promises: the server for the host,
+//                  the phone's own storage for a guest
 //   onStatus({ ready, connecting, delay }), onEnded(reason), onError(error)
 // It returns { sync, open }: sync after the page changes what isActive() says,
 // and open to show the controller without turning the phone.

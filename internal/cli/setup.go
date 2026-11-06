@@ -358,6 +358,9 @@ func runSetup(args []string, stdout io.Writer) int {
 		fmt.Fprintln(stdout, "To set up without questions, run: "+cliName+" setup --yes [--access lan|tailscale|both]")
 		return 2
 	default:
+		// Runs after apply, so the ready card stays up when the console
+		// would otherwise close with setup.
+		defer holdConsole(stdout)
 		final, err := tea.NewProgram(newWizard(s, a), tea.WithAltScreen()).Run()
 		if err != nil {
 			fmt.Fprintln(stdout, err)
@@ -426,15 +429,4 @@ func apply(s host, a answers, actions []action, out io.Writer) int {
 	fmt.Fprintln(out, "  "+st.dim.Render("Something not working?  ")+st.code.Render(cliName+" doctor"))
 	fmt.Fprintln(out)
 	return 0
-}
-
-// groupPasscode spaces the passcode in fours so it's easier to read off the
-// screen. The login ignores spaces.
-func groupPasscode(p string) string {
-	var groups []string
-	for len(p) > 4 {
-		groups = append(groups, p[:4])
-		p = p[4:]
-	}
-	return strings.Join(append(groups, p), " ")
 }

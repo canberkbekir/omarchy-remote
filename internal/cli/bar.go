@@ -16,7 +16,6 @@ import (
 
 	"github.com/canberkbekir/omarchy-remote/internal/api"
 	"github.com/canberkbekir/omarchy-remote/internal/config"
-	"github.com/canberkbekir/omarchy-remote/internal/qrtext"
 	"github.com/canberkbekir/omarchy-remote/internal/run"
 )
 
@@ -124,11 +123,13 @@ type barStatus struct {
 	Players int    `json:"players"`
 	Problem string `json:"problem,omitempty"`
 
-	// With --connect: how to open the app.
-	Name  string   `json:"name,omitempty"`
-	Label string   `json:"label,omitempty"`
-	URL   string   `json:"url,omitempty"`
-	QR    []string `json:"qr,omitempty"`
+	// With --connect: how to open the app. Label, URL and QR repeat the
+	// first address, for bar cards from before there were several.
+	Name      string          `json:"name,omitempty"`
+	Label     string          `json:"label,omitempty"`
+	URL       string          `json:"url,omitempty"`
+	QR        []string        `json:"qr,omitempty"`
+	Addresses []ConnectChoice `json:"addresses,omitempty"`
 }
 
 // runStatus is `pc-remote status`.
@@ -167,8 +168,11 @@ func runStatus(args []string, out io.Writer) int {
 		}
 	}
 	if *connect && configured {
-		first := ConnectAddress(dir, c)
-		st.Name, st.Label, st.URL, st.QR = c.Name, first.Label, first.URL, qrtext.Rows(first.URL)
+		st.Name, st.Addresses = c.Name, ConnectChoices(dir, c)
+		if len(st.Addresses) > 0 {
+			first := st.Addresses[0]
+			st.Label, st.URL, st.QR = first.Label, first.URL, first.QR
+		}
 	}
 
 	if *asJSON {
@@ -187,8 +191,8 @@ func runStatus(args []string, out io.Writer) int {
 	if st.Party {
 		fmt.Fprintf(out, "Party %s: %d of 3 friends joined.\n", st.Code, st.Players)
 	}
-	if st.URL != "" {
-		fmt.Fprintln(out, st.Label+":", st.URL)
+	for _, a := range st.Addresses {
+		fmt.Fprintln(out, a.Label+":", a.URL)
 	}
 	return 0
 }

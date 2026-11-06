@@ -1260,7 +1260,7 @@ $('sheet-go').addEventListener('click', () => {
 
 $('login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  passcode = $('passcode').value.replace(/\s+/g, ''); // shown in groups of four
+  passcode = $('passcode').value.replace(/\s+/g, ''); // typed with spaces still works
   try {
     const status = await api('/api/status');
     savePasscode(passcode);

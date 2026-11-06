@@ -17,6 +17,22 @@ function loadGuest() {
   }
 }
 
+// A guest's controller layout stays on their own phone, so each friend can
+// arrange the buttons their way without touching the host's layout.
+const LAYOUT_KEY = 'pc-remote-guest-layout';
+
+async function loadGuestLayout() {
+  try {
+    return JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}') ?? {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveGuestLayout(layout) {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); // throws when storage is off, which shows "Couldn't save"
+}
+
 function saveGuest(value) {
   try {
     if (value) localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
@@ -58,7 +74,9 @@ const pad = setupGamepad({
   credential: () => guest?.token ?? '',
   player: () => guest?.slot ?? '',
   isActive: () => !!guest && !$('joined').hidden,
-  canEdit: false,
+  canEdit: true,
+  loadLayout: loadGuestLayout,
+  saveLayout: saveGuestLayout,
   onStatus: ({ ready, connecting }) => {
     $('joined-status').textContent = ready ? 'Connected' : (connecting ? 'Connecting' : 'Offline');
     $('joined-dot').classList.toggle('off', !ready);

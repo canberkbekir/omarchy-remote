@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/canberkbekir/omarchy-remote/internal/qrtext"
+	"github.com/canberkbekir/omarchy-remote/internal/cli"
 )
 
 // connectTicketLife is how long the browser has to open the page.
@@ -55,11 +55,9 @@ func (c *connectTickets) use(ticket string) bool {
 }
 
 type connectInfo struct {
-	Name     string   `json:"name"`
-	Label    string   `json:"label"`
-	URL      string   `json:"url"`
-	QR       []string `json:"qr"`
-	Passcode string   `json:"passcode"`
+	Name      string              `json:"name"`
+	Addresses []cli.ConnectChoice `json:"addresses"`
+	Passcode  string              `json:"passcode"`
 }
 
 // handleConnect trades a tray ticket for what the phone needs to connect.
@@ -91,12 +89,9 @@ func (a *app) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "This link has expired. Open it again from the tray icon.")
 		return
 	}
-	first := a.connectAddress()
 	writeJSON(w, http.StatusOK, connectInfo{
-		Name:     a.name,
-		Label:    first.Label,
-		URL:      first.URL,
-		QR:       qrtext.Rows(first.URL),
-		Passcode: string(a.passcode),
+		Name:      a.name,
+		Addresses: a.connectChoices(),
+		Passcode:  string(a.passcode),
 	})
 }

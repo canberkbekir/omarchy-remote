@@ -19,11 +19,6 @@ function drawQr(rows) {
   $('qr-svg').replaceChildren(path);
 }
 
-// Groups of four, like the bar card, so it's easy to type on the phone.
-function grouped(passcode) {
-  return passcode.match(/.{1,4}/g)?.join(' ') ?? '';
-}
-
 async function load() {
   const ticket = location.hash.slice(1);
   // The ticket works once and only for a minute, so the copy the browser
@@ -47,13 +42,32 @@ async function load() {
   document.title = `Connect your phone to ${info.name}`;
   $('title').textContent = info.name;
   $('hint').textContent = 'Scan this with your phone’s camera';
-  if (info.qr?.length) {
-    drawQr(info.qr);
-    $('qr-card').hidden = false;
+  const addresses = info.addresses ?? [];
+  // With Tailscale and the home network, a button for each picks the code.
+  const show = (index) => {
+    const address = addresses[index];
+    if (!address) return;
+    if (address.qr?.length) {
+      drawQr(address.qr);
+      $('qr-card').hidden = false;
+    }
+    $('label').textContent = address.label;
+    $('url').textContent = address.url;
+    for (const [i, button] of [...$('tabs').children].entries()) button.setAttribute('aria-pressed', String(i === index));
+  };
+  if (addresses.length > 1) {
+    $('tabs').replaceChildren(...addresses.map((address, i) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'qr-tab';
+      button.textContent = address.label;
+      button.addEventListener('click', () => show(i));
+      return button;
+    }));
+    $('tabs').hidden = false;
   }
-  $('label').textContent = info.label;
-  $('url').textContent = info.url;
-  $('passcode').textContent = grouped(info.passcode);
+  show(0);
+  $('passcode').textContent = info.passcode;
   $('fallback').hidden = false;
   $('reveal').addEventListener('click', () => {
     const hidden = !$('passcode').hidden;

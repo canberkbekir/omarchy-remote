@@ -155,7 +155,7 @@ type app struct {
 	pointer *pointer // the zoom lens
 
 	tickets        *connectTickets // the tray's one-time links to the passcode page
-	connectAddress func() cli.Address
+	connectChoices func() []cli.ConnectChoice
 }
 
 func nightlightEnabled() (bool, error) {
@@ -464,7 +464,7 @@ func Run() {
 		openGuestPad:    input.OpenGamepad,
 		pointer:         newPointer(dir),
 		tickets:         newConnectTickets(),
-		connectAddress:  func() cli.Address { return cli.ConnectAddress(dir, settings) },
+		connectChoices:  func() []cli.ConnectChoice { return cli.ConnectChoices(dir, settings) },
 	}
 	a.openGuestPad = guestPadOpener(a)
 	a.pointer.restore()

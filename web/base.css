@@ -305,6 +305,9 @@ nav { flex-shrink: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 
 .qr-text { display: flex; flex-direction: column; gap: 8px; }
 .qr-text h2 { font-family: var(--font); font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
 .qr-text p, .qr-fallback p { font-size: 16px; color: var(--soft); }
+.qr-tabs { display: flex; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+.qr-tab { min-width: 112px; height: 40px; padding: 0 16px; background: transparent; border: 0; border-radius: 10px; color: var(--soft); font-size: 15px; font-weight: 500; }
+.qr-tab[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
 .qr-card { width: min(296px, 78vw); aspect-ratio: 1; padding: 16px; background: #FFFFFF; border-radius: 28px; }
 .qr-card svg { display: block; width: 100%; height: 100%; }
 .qr-fallback { display: flex; flex-direction: column; gap: 10px; }

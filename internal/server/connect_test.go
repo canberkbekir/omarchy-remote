@@ -49,8 +49,11 @@ func TestHandleConnect(t *testing.T) {
 		name:     "Den",
 		passcode: []byte("1234567812345678"),
 		tickets:  newConnectTickets(),
-		connectAddress: func() cli.Address {
-			return cli.Address{Label: "Address", URL: "http://192.168.1.5:8377"}
+		connectChoices: func() []cli.ConnectChoice {
+			return []cli.ConnectChoice{
+				{Label: "Anywhere", URL: "https://den.tail1234.ts.net", QR: []string{"1"}},
+				{Label: "At home", URL: "http://192.168.1.5:8377", QR: []string{"1"}},
+			}
 		},
 	}
 	post := func(body string) *httptest.ResponseRecorder {
@@ -73,7 +76,8 @@ func TestHandleConnect(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil {
 		t.Fatal(err)
 	}
-	if info.Name != "Den" || info.Passcode != "1234567812345678" || info.URL != "http://192.168.1.5:8377" || info.Label != "Address" || len(info.QR) == 0 {
+	if info.Name != "Den" || info.Passcode != "1234567812345678" || len(info.Addresses) != 2 ||
+		info.Addresses[0].URL != "https://den.tail1234.ts.net" || info.Addresses[1].Label != "At home" {
 		t.Errorf("info = %+v", info)
 	}
 

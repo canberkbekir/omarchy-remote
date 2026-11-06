@@ -161,3 +161,6 @@ func startFailure() error {
 
 // prepareConsole: Linux terminals already understand colors.
 func prepareConsole() {}
+
+// holdConsole: a Linux terminal stays open after setup.
+func holdConsole(io.Writer) {}

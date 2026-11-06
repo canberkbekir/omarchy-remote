@@ -24,7 +24,12 @@ Item {
   property string passcode: ""
   property bool passcodeVisible: false
 
-  readonly property var qrRows: info.qr || []
+  // With Tailscale and the home network there are two addresses; the labels
+  // above the code pick one. An older helper gives only url and qr.
+  readonly property var addresses: info.addresses || (info.url ? [{ label: info.label, url: info.url, qr: info.qr }] : [])
+  property int pick: 0
+  readonly property var current: addresses[pick] || addresses[0] || ({})
+  readonly property var qrRows: current.qr || []
   readonly property int qrSize: qrRows.length
   // The quiet zone a scanner needs around the code, in modules.
   readonly property int quiet: 3
@@ -39,6 +44,7 @@ Item {
     root.loading = true
     root.passcode = ""
     root.passcodeVisible = false
+    root.pick = 0
     if (!statusProc.running) statusProc.running = true
     root.opened = true
     // The window maps after this, so focus has to be taken again for Esc.
@@ -62,11 +68,6 @@ Item {
     if (passcodeVisible) { passcodeVisible = false; return }
     if (passcode !== "") { passcodeVisible = true; return }
     if (!passcodeProc.running) passcodeProc.running = true
-  }
-
-  // Spaced in fours, as setup shows it; the phone ignores the spaces.
-  function grouped(text) {
-    return String(text).replace(/(.{4})(?=.)/g, "$1 ")
   }
 
   function partyLine() {
@@ -155,6 +156,35 @@ Item {
             Layout.alignment: Qt.AlignHCenter
           }
 
+          RowLayout {
+            visible: root.addresses.length > 1
+            spacing: Style.space(16)
+            Layout.alignment: Qt.AlignHCenter
+
+            Repeater {
+              model: root.addresses
+
+              Text {
+                required property var modelData
+                required property int index
+                textFormat: Text.PlainText
+                text: modelData.label
+                color: root.onScrim
+                opacity: index === root.pick ? 1 : 0.5
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: index === root.pick
+                font.underline: index === root.pick
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.pick = parent.index
+                }
+              }
+            }
+          }
+
           // One native rectangle per dark module keeps the code crisp.
           Rectangle {
             id: qrCanvas
@@ -208,8 +238,8 @@ Item {
 
           Text {
             textFormat: Text.PlainText
-            visible: !!root.info.url
-            text: root.info.url || ""
+            visible: !!root.current.url
+            text: root.current.url || ""
             color: root.onScrim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -222,7 +252,7 @@ Item {
           Text {
             textFormat: Text.PlainText
             visible: !root.loading && !root.info.problem
-            text: root.passcodeVisible ? "Passcode  " + root.grouped(root.passcode) : "Show passcode"
+            text: root.passcodeVisible ? "Passcode  " + root.passcode : "Show passcode"
             color: root.onScrim
             opacity: root.passcodeVisible ? 1 : 0.6
             font.family: root.fontFamily

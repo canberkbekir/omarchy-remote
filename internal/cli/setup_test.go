@@ -65,15 +65,6 @@ func TestCleanPCName(t *testing.T) {
 	}
 }
 
-func TestGroupPasscode(t *testing.T) {
-	if got := groupPasscode("k7m2pq9xra"); got != "k7m2 pq9x ra" {
-		t.Errorf("got %q", got)
-	}
-	if got := groupPasscode("abcd"); got != "abcd" {
-		t.Errorf("got %q", got)
-	}
-}
-
 func TestUFWState(t *testing.T) {
 	dir := t.TempDir()
 	conf := filepath.Join(dir, "ufw.conf")
@@ -443,4 +434,31 @@ func writeConfig(t *testing.T, text string) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func TestConnectChoices(t *testing.T) {
+	lan := Address{"At home", "http://192.168.1.5:8377"}
+	known := Address{"Anywhere", "https://den.tail1234.ts.net"}
+	unknown := Address{"Anywhere", "https://<this-pc>.<your-tailnet>.ts.net"}
+	tests := []struct {
+		in   []Address
+		want []string
+	}{
+		{[]Address{known, lan}, []string{known.URL, lan.URL}},
+		{[]Address{unknown, lan}, []string{lan.URL}},
+		{[]Address{unknown}, []string{unknown.URL}}, // still says what to open
+		{[]Address{lan}, []string{lan.URL}},
+	}
+	for _, test := range tests {
+		var got []string
+		for _, c := range connectChoices(test.in) {
+			if len(c.QR) == 0 {
+				t.Errorf("%s has no QR code", c.URL)
+			}
+			got = append(got, c.URL)
+		}
+		if !slices.Equal(got, test.want) {
+			t.Errorf("connectChoices(%v) = %v, want %v", test.in, got, test.want)
+		}
+	}
 }
