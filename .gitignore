@@ -5,4 +5,4 @@ tests/windows_e2e/artifacts/
 __pycache__/
 .pytest_cache/
 /dist/
-PCRemoteSetup.exe
+omarchy-remote-windows-setup.exe

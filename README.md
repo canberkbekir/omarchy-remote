@@ -383,7 +383,7 @@ sudo tailscale serve --https=443 off
 
 Windows 10 and 11 work too. The trackpad, keyboard, typing, clipboard, volume, mute, media keys, now playing, audio outputs, power, turning the screens off, brightness (DDC/CI monitors and laptop panels), the game controller, parties and the zoom lens work. The game controller needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) driver: `setup` offers to install it with winget (Windows asks for permission once), and `doctor` tells you if it's missing. ViGEmBus is no longer developed, but it is signed and still works. Night light needs Linux for now.
 
-1. Download `PCRemoteSetup.exe` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and run it. It isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": click **More info**, then **Run anyway**.
+1. Download `omarchy-remote-windows-setup.exe` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and run it. It isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": click **More info**, then **Run anyway**.
 2. The installer puts PC Remote in `%LOCALAPPDATA%\Programs\PC Remote` for your user only, without administrator rights. Tick **Install the game controller driver** if you want the game controller; Windows asks for permission for the driver.
 3. At the end, leave **Set up PC Remote now** ticked. Setup adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (Windows asks for permission for that step only), starts the server, and shows the passcode QR code.
 4. Scan the QR code with your phone.

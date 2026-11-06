@@ -1,4 +1,4 @@
-; The Windows installer, PCRemoteSetup.exe. Build it with Inno Setup 6:
+; The Windows installer, omarchy-remote-windows-setup.exe. Build it with Inno Setup 6:
 ;
 ;   iscc /DAppVersion=0.2.1 /DSourceDir=<unzipped release folder> ^
 ;        /DViGEmBusSetup=<ViGEmBus_1.22.0_x64_x86_arm64.exe> packaging\windows\pc-remote.iss
@@ -38,7 +38,7 @@ WizardStyle=modern
 SetupIconFile=pc-remote.ico
 UninstallDisplayIcon={app}\pc-remote.ico
 UninstallDisplayName=PC Remote
-OutputBaseFilename=PCRemoteSetup
+OutputBaseFilename=omarchy-remote-windows-setup
 OutputDir=..\..\dist
 Compression=lzma2
 SolidCompression=yes

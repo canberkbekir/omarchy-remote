@@ -121,7 +121,7 @@ jobs:
           Get-Pinned $env:VIGEMBUS_URL $env:VIGEMBUS_SHA256 tools/ViGEmBusSetup.exe
           Start-Process tools/innosetup.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$PWD\tools\inno" -Wait
           if (-not (Test-Path tools/inno/ISCC.exe)) { throw "Inno Setup didn't install" }
-      - name: Build PCRemoteSetup.exe
+      - name: Build omarchy-remote-windows-setup.exe
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
@@ -131,7 +131,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: installer
-          path: dist/PCRemoteSetup.exe
+          path: dist/omarchy-remote-windows-setup.exe
 
   publish:
     needs: [build, windows-installer]
@@ -152,6 +152,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd dist
-          sha256sum *.tar.gz *.zip PCRemoteSetup.exe install.sh > checksums.txt
+          sha256sum *.tar.gz *.zip omarchy-remote-windows-setup.exe install.sh > checksums.txt
           gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --generate-notes \
-            *.tar.gz *.zip PCRemoteSetup.exe install.sh checksums.txt
+            *.tar.gz *.zip omarchy-remote-windows-setup.exe install.sh checksums.txt
