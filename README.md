@@ -2,11 +2,17 @@
 
 # Omarchy Remote
 
-**Your phone becomes a remote, a trackpad, a keyboard and a game controller for your [Omarchy](https://omarchy.org) PC.**
+**Your phone becomes a remote, a trackpad, a keyboard and a game controller for your [Omarchy](https://omarchy.org) or Windows PC.**
 
 One small Go binary on the PC, one web app on your Home Screen. No app store, no root, no setup in your games.
 
-<img src="docs/tour.gif" width="300" alt="A tour of the app: dragging the volume, dimming all monitors, turning on the night light, using the trackpad and opening the Game tab">
+<img src="docs/tour.gif" width="300" alt="A tour of the app: dragging the volume, turning on the night light, dimming all monitors, using the trackpad and opening the Game tab">
+
+<details>
+<summary><b>Watch the demo</b>: the phone, the zoom lens and Windows</summary>
+<br>
+<img src="docs/demo.gif" width="800" alt="Demo: the phone app controlling the PC, the zoom lens following the pointer, and setup, the tray and the QR code page on Windows">
+</details>
 
 </div>
 
@@ -22,7 +28,7 @@ One small Go binary on the PC, one web app on your Home Screen. No app store, no
 ## Contents
 
 - [What it does](#what-it-does)
-- [Get started](#get-started)
+- [Get started](#get-started): [Omarchy](#on-omarchy), [Windows](#on-windows)
 - [A tour of the app](#a-tour-of-the-app)
   - [Control](#control): volume, audio output, now playing, power
   - [Display](#display): screens off, night light, brightness
@@ -32,7 +38,7 @@ One small Go binary on the PC, one web app on your Home Screen. No app store, no
 - [Security](#security)
 - [Configuration](#configuration)
 - [Themes](#themes)
-- [More](#more): uninstall, the `pc-remote` helper, Windows preview, development
+- [More](#more): uninstall, the `pc-remote` helper, development
 
 ## What it does
 
@@ -45,16 +51,16 @@ One small Go binary on the PC, one web app on your Home Screen. No app store, no
 | 🎉 **Party** | Friends on your Wi-Fi scan a QR code and join as players 2 to 4, with a controller and nothing else. |
 | 🎨 **Themes** | Follows your Omarchy theme live, or bring your own CSS. |
 | 🔒 **Access** | One passcode, created on first run, with a one-minute lockout after five wrong tries. Works over Tailscale. |
-| 📦 **One binary** | The web app is embedded. No root: input goes through `/dev/uinput`, which systemd gives to the user at the computer. |
+| 📦 **One binary** | The web app is embedded. On Linux, no root: input goes through `/dev/uinput`, which systemd gives to the user at the computer. On Windows, a per-user installer and a tray icon. |
 
 ## Get started
 
 **You need**
 
-- Omarchy (Hyprland, PipeWire)
+- Omarchy (Hyprland, PipeWire), or Windows 10 or 11
 - An iPhone on iOS 16.2 or newer, or a recent Android browser
 
-**Install on the PC**
+### On Omarchy
 
 ```bash
 curl -fsSL https://github.com/canberkbekir/omarchy-remote/releases/latest/download/install.sh | bash
@@ -81,7 +87,7 @@ To update, run `pc-remote update`. It installs the latest release and restarts t
 
 **In the Omarchy bar**
 
-On Omarchy, setup offers a phone icon for the bar. It lights up while your phone is connected and is highlighted during a party. Click it for a card with the app's QR code, its address and the passcode, which stays hidden until you click it. It's an Omarchy shell plugin in `~/.config/omarchy/plugins/canberkbekir.omarchy-remote`, it updates with Omarchy Remote, and it moves like any other bar widget. `pc-remote setup --bar=false` takes it off again.
+On Omarchy, setup offers a phone icon for the bar. It lights up while your phone is connected and is highlighted during a party. Click it for a card with the app's QR code, its address and the passcode, which stays hidden until you click it. With Wi-Fi and Tailscale both on, **Anywhere** and **At home** switch the code between the two addresses. It's an Omarchy shell plugin in `~/.config/omarchy/plugins/canberkbekir.omarchy-remote`, it updates with Omarchy Remote, and it moves like any other bar widget. `pc-remote setup --bar=false` takes it off again.
 
 **Commands**
 
@@ -93,6 +99,42 @@ On Omarchy, setup offers a phone icon for the bar. It lights up while your phone
 | `pc-remote update` | install the latest release and restart the service. `--check` only says whether there is one |
 | `pc-remote status` | say whether it's running and a phone is connected. `--connect` adds the address |
 | `pc-remote version` | show the version |
+
+### On Windows
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/windows-setup.png" alt="Setup in a terminal, asking how the phone reaches the PC"></td>
+    <td width="50%"><img src="docs/windows-ready.png" alt="Setup done: the QR code to scan, the address and the passcode"></td>
+  </tr>
+</table>
+
+Everything works on Windows except the night light. The game controller needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) driver, which the installer offers to install. ViGEmBus is no longer developed, but it is signed and still works.
+
+1. Download `omarchy-remote-windows-setup.exe` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and run it.
+
+   > **Windows will look worried.** I didn't pay Microsoft for a code-signing certificate, so Windows has never met me and shows "Windows protected your PC". Click **More info**, then **Run anyway**. All the code is right here if you'd like to check it first.
+
+2. The installer puts PC Remote in `%LOCALAPPDATA%\Programs\PC Remote` for your user only, without administrator rights. Leave **Install the game controller driver** ticked if you want the game controller; Windows asks for permission for the driver.
+3. At the end, leave **Set up PC Remote now** ticked. Setup runs in a terminal and asks the same questions as on Omarchy: arrow keys to choose, Enter to go on. It adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (Windows asks for permission for that step only) and starts the server.
+4. Scan the QR code with your phone, tap **Share**, then **Add to Home Screen**. Press Enter to close the setup window.
+
+<table>
+  <tr>
+    <td width="40%"><img src="docs/windows-tray.png" alt="The tray icon's menu: Show passcode and QR code, Open web app, Start party, Check for updates, Quit"></td>
+    <td width="60%"><img src="docs/windows-qr.png" alt="The page the tray opens: the PC's name, the QR code, its address and Show passcode"></td>
+  </tr>
+</table>
+
+**The tray icon** takes the place of the Omarchy bar icon. It lights up while your phone is connected, shows how many guests a party has, and gets an orange dot when Windows Firewall keeps phones out of the current network (it isn't Private); its tooltip says the same. It follows the taskbar's light or dark mode. Click it for a page with the app's QR code, its address and the passcode, which stays hidden until you click it. Right-click it to open the web app, start or end a party, check for updates, or quit the server.
+
+Your network must be set to **Private** in Windows settings: the firewall blocks the phone on a Public network. `pc-remote-web.exe doctor` checks this and the rest of the setup. `pc-remote-web.exe update`, or **Check for updates** in the tray, installs the latest release and restarts the server.
+
+**PC Remote** in the Start menu runs setup again: to change settings or show the QR code. To uninstall, use Settings › Apps › PC Remote; it removes the logon task and the firewall rules, and asks whether to delete your settings and passcode too.
+
+Prefer no installer? Unzip `pc-remote-windows-amd64.zip` from the same release into a folder you keep and run `pc-remote-web.exe setup` there. `pc-remote-web.exe uninstall` (add `--purge` to delete the settings too) undoes setup; then delete the folder.
+
+The server runs in your Windows session, not as a service, because a service can't reach the desktop. The passcode is in `%AppData%\pc-remote\passcode`, and `config.toml` goes in the same folder. Windows doesn't let it type into apps running as administrator unless `pc-remote-web.exe` runs as administrator too.
 
 ## A tour of the app
 
@@ -146,11 +188,18 @@ On Omarchy, setup offers a phone icon for the bar. It lights up while your phone
 
 **Clipboard** shows what's copied on the PC so you can copy it to the phone, and sends text the other way.
 
-**Zoom** puts a magnifying circle around the pointer, handy on a TV across the room. It follows the pointer, clicks go through it, and it sharpens what it magnifies so text stays readable. The real cursor hides while it's up, and the lens shows where a click lands. It magnifies the window under the pointer, and closes when you leave the Input tab. Zoom needs Hyprland and Quickshell (`qs`, from the `quickshell` package).
+**Zoom** puts a magnifying circle around the pointer, handy on a TV across the room. It follows the pointer, clicks go through it, and it sharpens what it magnifies so text stays readable. The real cursor hides while it's up, and the lens shows where a click lands. It magnifies the window under the pointer, and closes when you leave the Input tab. On Omarchy, zoom needs Hyprland and Quickshell (`qs`, from the `quickshell` package). On Windows it uses the built-in Magnifier.
 
 **The gear** at the top sets the lens size and how much it zooms (2× to 4×).
 
 </td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td width="72%"><img src="docs/zoom.gif" alt="The zoom lens following the pointer across a web page on the PC, magnifying file names and text"></td>
+    <td width="28%"><img src="docs/zoom-settings.png" alt="The zoom settings: lens size small, medium or large, and zoom 2×, 3× or 4×"></td>
   </tr>
 </table>
 
@@ -223,7 +272,7 @@ On the Game tab, tap **Invite players**. You get a 4-letter code (no numbers, an
 - **The player list** shows each player and their delay, with a **Remove** button. **New code** changes the code without kicking anyone. **End party** disconnects everyone, unplugs their controllers and closes the guest port.
 - **Reconnecting** (phone locked, Wi-Fi blip) keeps the same player. The phone remembers its place until the party ends.
 - **Guessing codes** is limited: 5 wrong tries lock a device out for a minute, and 20 wrong tries from all devices together pause joining for a minute.
-- Guests can't edit the layout. They get the default one.
+- **Guests can rearrange their controller** with the same pencil. Their layout is saved on their own phone, so it never changes yours.
 
 Friends' phones need the guest port to get through your [firewall](#firewall); setup offers to open it. Set `guest_port = 0` in `config.toml` to turn parties off.
 
@@ -378,25 +427,6 @@ sudo tailscale serve --https=443 off
 ### The `pc-remote` helper
 
 `scripts/pc-remote` runs a command inside your running Hyprland session, for example `pc-remote omarchy-system-lock`. The server uses it for session commands. It also works over SSH, so you can use it from an iPhone Shortcuts **Run Script Over SSH** action as well.
-
-### Windows (preview)
-
-Windows 10 and 11 work too. The trackpad, keyboard, typing, clipboard, volume, mute, media keys, now playing, audio outputs, power, turning the screens off, brightness (DDC/CI monitors and laptop panels), the game controller, parties and the zoom lens work. The game controller needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) driver: `setup` offers to install it with winget (Windows asks for permission once), and `doctor` tells you if it's missing. ViGEmBus is no longer developed, but it is signed and still works. Night light needs Linux for now.
-
-1. Download `omarchy-remote-windows-setup.exe` from the [latest release](https://github.com/canberkbekir/omarchy-remote/releases/latest) and run it. It isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": click **More info**, then **Run anyway**.
-2. The installer puts PC Remote in `%LOCALAPPDATA%\Programs\PC Remote` for your user only, without administrator rights. Tick **Install the game controller driver** if you want the game controller; Windows asks for permission for the driver.
-3. At the end, leave **Set up PC Remote now** ticked. Setup adds a Task Scheduler task that starts the server when you sign in, opens the firewall for your private network (Windows asks for permission for that step only), starts the server, and shows the passcode QR code.
-4. Scan the QR code with your phone.
-
-**PC Remote** in the Start menu runs setup again: to change settings or show the QR code. To uninstall, use Settings › Apps › PC Remote; it removes the logon task and the firewall rules, and asks whether to delete your settings and passcode too.
-
-Prefer no installer? Unzip `pc-remote-windows-amd64.zip` from the same release into a folder you keep and run `pc-remote-web.exe setup` there. `pc-remote-web.exe uninstall` (add `--purge` to delete the settings too) undoes setup; then delete the folder.
-
-A tray icon takes the place of the Omarchy bar icon. It lights up while your phone is connected, shows how many guests a party has, and gets an orange dot when Windows Firewall keeps phones out of the current network (it isn't Private); its tooltip says the same. It follows the taskbar's light or dark mode. Click it for a page with the app's QR code, its address and the passcode, which stays hidden until you click it. Right-click it to open the web app, start or end a party, or quit the server.
-
-Your network must be set to **Private** in Windows settings: the firewall blocks the phone on a Public network. `pc-remote-web.exe doctor` checks this and the rest of the setup. `pc-remote-web.exe update` installs the latest release and restarts the server.
-
-The server runs in your Windows session, not as a service, because a service can't reach the desktop. The passcode is in `%AppData%\pc-remote\passcode`, and `config.toml` goes in the same folder. Windows doesn't let it type into apps running as administrator unless `pc-remote-web.exe` runs as administrator too.
 
 ### Development
 
