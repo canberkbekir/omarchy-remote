@@ -8,6 +8,22 @@ const SHEETS = {
   shutdown: { title: 'Shut down this PC?', body: 'You won’t be able to turn it back on from your phone.', go: 'Shut Down', done: 'Shutting down' },
 };
 
+// On iOS, a home-screen app can stay scrolled after the on-screen keyboard
+// closes or the phone turns. The page looks right, but taps land above the
+// finger. The page never scrolls on purpose, so put it back at the top.
+function resetScroll() {
+  if (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop) {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+}
+document.addEventListener('focusout', () => setTimeout(resetScroll, 100));
+window.addEventListener('orientationchange', () => setTimeout(resetScroll, 300));
+window.visualViewport?.addEventListener('resize', () => {
+  if (!document.activeElement?.matches('input, textarea')) resetScroll();
+});
+
 function loadPasscode() {
   try { return localStorage.getItem(STORAGE_KEY) ?? ''; } catch { return ''; }
 }
