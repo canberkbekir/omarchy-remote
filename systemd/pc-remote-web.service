@@ -1,6 +1,9 @@
 [Unit]
 Description=PC Remote web app
-After=pipewire.service wireplumber.service
+# Hyprland's environment reaches systemd once the graphical session starts.
+# Starting with it lets the zoom lens see HYPRLAND_INSTANCE_SIGNATURE.
+After=graphical-session.target pipewire.service wireplumber.service
+PartOf=graphical-session.target
 
 [Service]
 ExecStart=%h/.local/bin/pc-remote-web
@@ -10,4 +13,4 @@ Restart=on-failure
 RestartSec=2
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target

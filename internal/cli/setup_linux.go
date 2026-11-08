@@ -106,7 +106,10 @@ func installUnit(executable string) error {
 	}
 	unit := fmt.Sprintf(`[Unit]
 Description=Omarchy Remote
-After=pipewire.service wireplumber.service
+# Hyprland's environment reaches systemd once the graphical session starts.
+# Starting with it lets the zoom lens see HYPRLAND_INSTANCE_SIGNATURE.
+After=graphical-session.target pipewire.service wireplumber.service
+PartOf=graphical-session.target
 
 [Service]
 ExecStart=%s
@@ -115,7 +118,7 @@ Restart=on-failure
 RestartSec=2
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 `, executable, filepath.Dir(executable))
 	path := filepath.Join(dir, "systemd", "user", "pc-remote-web.service")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -128,8 +131,10 @@ WantedBy=default.target
 	return err
 }
 
+// startService uses reenable so an install that was wanted by default.target
+// moves to graphical-session.target.
 func startService() error {
-	if out, err := exec.Command("systemctl", "--user", "enable", "pc-remote-web.service").CombinedOutput(); err != nil {
+	if out, err := exec.Command("systemctl", "--user", "reenable", "pc-remote-web.service").CombinedOutput(); err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
 	}
 	if out, err := exec.Command("systemctl", "--user", "restart", "pc-remote-web.service").CombinedOutput(); err != nil {
